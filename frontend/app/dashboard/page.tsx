@@ -1,22 +1,195 @@
 "use client";
 import React, { useState } from "react";
-import axios from "axios";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { atomDark } from "react-syntax-highlighter/dist/cjs/styles/prism";
 
-const DashboardPage = () => {
-  const [messages, setMessages] = useState([
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+}
+
+interface Conversation {
+  id: string;
+  title: string;
+  messages: Message[];
+  timestamp: number;
+  lastUpdated: number;
+}
+
+interface APIResponse {
+  response: string;
+}
+
+const formatMessageWithCode = (content: string) => {
+  const parts = [];
+  const segments = content.split("```");
+
+  for (let i = 0; i < segments.length; i++) {
+    if (i % 2 === 1) {
+      // Code block
+      const languageMatch = segments[i].match(/^(\w+)\n/);
+      const language = languageMatch ? languageMatch[1] : "javascript";
+      const code = languageMatch
+        ? segments[i].substring(languageMatch[0].length)
+        : segments[i];
+
+      parts.push(
+        <div key={`code-${i}`} className="my-3 rounded-lg overflow-hidden">
+          <SyntaxHighlighter
+            language={language}
+            style={atomDark}
+            customStyle={{
+              margin: 0,
+              padding: "1rem",
+              fontSize: "0.875rem",
+              lineHeight: "1.5",
+              borderRadius: "0.5rem",
+            }}
+          >
+            {code}
+          </SyntaxHighlighter>
+        </div>
+      );
+    } else {
+      // Regular text
+      if (segments[i]) {
+        parts.push(
+          <p key={`text-${i}`} className="whitespace-pre-line">
+            {segments[i]}
+          </p>
+        );
+      }
+    }
+  }
+
+  return parts.length > 0 ? parts : content;
+};
+
+const DashboardPage: React.FC = () => {
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<
+    string | null
+  >(null);
+  const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
       content:
-        "I’m your AI assistant. Ask me anything about programming, tech, or more!",
+        "I'm your AI assistant. Ask me anything about programming, tech, or more",
     },
   ]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [input, setInput] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(false);
 
-  const handleSend = async () => {
+  // Generate a unique ID for conversations
+  const generateId = (): string => Date.now().toString();
+
+  // Get conversation title from first user message
+  const getConversationTitle = (messages: Message[]): string => {
+    const firstUserMessage = messages.find((msg) => msg.role === "user");
+    if (firstUserMessage) {
+      return firstUserMessage.content.length > 30
+        ? firstUserMessage.content.substring(0, 30) + "..."
+        : firstUserMessage.content;
+    }
+    return "New Chat";
+  };
+
+  // Format timestamp for display
+  const formatTime = (timestamp: number): string => {
+    const now = new Date();
+    const date = new Date(timestamp);
+    const diffInHours = Math.floor(
+      (now.getTime() - date.getTime()) / (1000 * 60 * 60)
+    );
+
+    if (diffInHours < 1) return "Just now";
+    if (diffInHours < 24) return `${diffInHours} hours ago`;
+    if (diffInHours < 48) return "Yesterday";
+    if (diffInHours < 168) return `${Math.floor(diffInHours / 24)} days ago`;
+    return `${Math.floor(diffInHours / 168)} weeks ago`;
+  };
+
+  // Save conversation to history
+  const saveConversation = (
+    messages: Message[],
+    conversationId: string | null = null
+  ): string => {
+    const id = conversationId || generateId();
+    const title = getConversationTitle(messages);
+    const timestamp = Date.now();
+
+    const conversationData: Conversation = {
+      id,
+      title,
+      messages,
+      timestamp,
+      lastUpdated: timestamp,
+    };
+
+    setConversations((prev) => {
+      const existingIndex = prev.findIndex((conv) => conv.id === id);
+      if (existingIndex !== -1) {
+        // Update existing conversation
+        const updated = [...prev];
+        updated[existingIndex] = {
+          ...conversationData,
+          lastUpdated: timestamp,
+        };
+        return updated.sort((a, b) => b.lastUpdated - a.lastUpdated);
+      } else {
+        // Add new conversation
+        return [conversationData, ...prev].sort(
+          (a, b) => b.lastUpdated - a.lastUpdated
+        );
+      }
+    });
+
+    return id;
+  };
+
+  // Load conversation from history
+  const loadConversation = (conversationId: string): void => {
+    const conversation = conversations.find(
+      (conv) => conv.id === conversationId
+    );
+    if (conversation) {
+      setMessages(conversation.messages);
+      setCurrentConversationId(conversationId);
+    }
+  };
+
+  // Start new conversation
+  const startNewConversation = (): void => {
+    const initialMessages: Message[] = [
+      {
+        role: "assistant",
+        content:
+          "I'm your AI assistant. Ask me anything about programming, tech, or more!",
+      },
+    ];
+    setMessages(initialMessages);
+    setCurrentConversationId(null);
+    setInput("");
+  };
+
+  // Delete conversation
+  const deleteConversation = (
+    conversationId: string,
+    e: React.MouseEvent
+  ): void => {
+    e.stopPropagation();
+    setConversations((prev) =>
+      prev.filter((conv) => conv.id !== conversationId)
+    );
+    if (currentConversationId === conversationId) {
+      startNewConversation();
+    }
+  };
+
+  const handleSend = async (): Promise<void> => {
     if (!input.trim()) return;
 
-    const userMessage = { role: "user", content: input };
+    const userMessage: Message = { role: "user", content: input };
     const updatedMessages = [...messages, userMessage];
 
     setMessages(updatedMessages);
@@ -24,27 +197,58 @@ const DashboardPage = () => {
     setLoading(true);
 
     try {
-      const res = await axios.post("http://localhost:8000/ask", {
-        messages: updatedMessages,
+      // Replace this mock call with your actual API call:
+      // Note: You'll need to import axios or use fetch
+      const response = await fetch("http://localhost:8000/ask", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: updatedMessages,
+        }),
       });
 
-      const aiMessage = { role: "assistant", content: res.data.response };
-      setMessages((prev) => [...prev, aiMessage]);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data: APIResponse = await response.json();
+      const aiMessage: Message = { role: "assistant", content: data.response };
+      const finalMessages = [...updatedMessages, aiMessage];
+      setMessages(finalMessages);
+
+      // Save conversation after AI response
+      const conversationId = saveConversation(
+        finalMessages,
+        currentConversationId
+      );
+      if (!currentConversationId) {
+        setCurrentConversationId(conversationId);
+      }
     } catch (err) {
-      console.log(err);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "❌ Failed to get a response. Please try again later.",
-        },
-      ]);
+      console.error(err);
+      const errorMessage: Message = {
+        role: "assistant",
+        content: "❌ Failed to get a response. Please try again later.",
+      };
+      const finalMessages = [...updatedMessages, errorMessage];
+      setMessages(finalMessages);
+
+      // Save conversation even with error
+      const conversationId = saveConversation(
+        finalMessages,
+        currentConversationId
+      );
+      if (!currentConversationId) {
+        setCurrentConversationId(conversationId);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -81,8 +285,45 @@ const DashboardPage = () => {
             <span className="text-xl">AI Assistant</span>
           </div>
           <div className="flex items-center space-x-4">
-            <button className="p-2 rounded-lg bg-neutral-700 hover:bg-neutral-600 transition-colors">
-              <i data-fa-i2svg>
+            <button
+              onClick={startNewConversation}
+              className="p-2 rounded-lg bg-neutral-700 hover:bg-neutral-600 transition-colors"
+            >
+              <svg
+                className="svg-inline--fa fa-plus w-5 h-5"
+                aria-hidden="true"
+                focusable="false"
+                data-prefix="fas"
+                data-icon="plus"
+                role="img"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 448 512"
+                data-fa-i2svg
+              >
+                <path
+                  fill="currentColor"
+                  d="M256 80c0-17.7-14.3-32-32-32s-32 14.3-32 32V224H48c-17.7 0-32 14.3-32 32s14.3 32 32 32H192V432c0 17.7 14.3 32 32 32s32-14.3 32-32V288H400c17.7 0 32-14.3 32-32s-14.3-32-32-32H256V80z"
+                />
+              </svg>
+            </button>
+            <img
+              src="https://api.dicebear.com/7.x/notionists/svg?scale=200&seed=42"
+              alt="User Avatar"
+              className="w-8 h-8 rounded-full"
+            />
+          </div>
+        </header>
+        <div className="flex h-[calc(100vh-80px)]">
+          {/* Sidebar */}
+          <aside
+            id="sidebar"
+            className="w-64 bg-neutral-800 border-r border-neutral-700 flex flex-col"
+          >
+            <div className="p-4 border-b border-neutral-700">
+              <button
+                onClick={startNewConversation}
+                className="w-full bg-neutral-600 hover:bg-neutral-700 text-white py-2 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
+              >
                 <svg
                   className="svg-inline--fa fa-plus w-5 h-5"
                   aria-hidden="true"
@@ -99,101 +340,76 @@ const DashboardPage = () => {
                     d="M256 80c0-17.7-14.3-32-32-32s-32 14.3-32 32V224H48c-17.7 0-32 14.3-32 32s14.3 32 32 32H192V432c0 17.7 14.3 32 32 32s32-14.3 32-32V288H400c17.7 0 32-14.3 32-32s-14.3-32-32-32H256V80z"
                   />
                 </svg>
-              </i>
-            </button>
-            <img
-              src="https://api.dicebear.com/7.x/notionists/svg?scale=200&seed=42"
-              alt="User Avatar"
-              className="w-8 h-8 rounded-full"
-            />
-          </div>
-        </header>
-        <div className="flex h-[calc(100vh-80px)]">
-          {/* Sidebar */}
-          <aside
-            id="sidebar"
-            className="w-64 bg-neutral-800 border-r border-neutral-700 flex flex-col"
-          >
-            <div className="p-4 border-b border-neutral-700">
-              <button className="w-full bg-neutral-600 hover:bg-neutral-700 text-white py-2 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2">
-                <i data-fa-i2svg>
-                  <svg
-                    className="svg-inline--fa fa-plus w-5 h-5"
-                    aria-hidden="true"
-                    focusable="false"
-                    data-prefix="fas"
-                    data-icon="plus"
-                    role="img"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 448 512"
-                    data-fa-i2svg
-                  >
-                    <path
-                      fill="currentColor"
-                      d="M256 80c0-17.7-14.3-32-32-32s-32 14.3-32 32V224H48c-17.7 0-32 14.3-32 32s14.3 32 32 32H192V432c0 17.7 14.3 32 32 32s32-14.3 32-32V288H400c17.7 0 32-14.3 32-32s-14.3-32-32-32H256V80z"
-                    />
-                  </svg>
-                </i>
                 <span>New Chat</span>
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
               <h3 className="text-sm text-neutral-400 mb-3">
-                Recent Conversations
+                Discussion History
               </h3>
               <div className="space-y-2">
-                <div className="p-3 rounded-lg bg-neutral-700 hover:bg-neutral-600 cursor-pointer transition-colors">
-                  <div className="text-sm truncate">
-                    How to learn JavaScript?
+                {conversations.length === 0 ? (
+                  <div className="text-sm text-neutral-500 text-center py-8">
+                    No conversations yet
                   </div>
-                  <div className="text-xs text-neutral-400 mt-1">
-                    2 hours ago
-                  </div>
-                </div>
-                <div className="p-3 rounded-lg hover:bg-neutral-700 cursor-pointer transition-colors">
-                  <div className="text-sm truncate">Python data structures</div>
-                  <div className="text-xs text-neutral-400 mt-1">Yesterday</div>
-                </div>
-                <div className="p-3 rounded-lg hover:bg-neutral-700 cursor-pointer transition-colors">
-                  <div className="text-sm truncate">React best practices</div>
-                  <div className="text-xs text-neutral-400 mt-1">
-                    2 days ago
-                  </div>
-                </div>
-                <div className="p-3 rounded-lg hover:bg-neutral-700 cursor-pointer transition-colors">
-                  <div className="text-sm truncate">API design patterns</div>
-                  <div className="text-xs text-neutral-400 mt-1">
-                    3 days ago
-                  </div>
-                </div>
-                <div className="p-3 rounded-lg hover:bg-neutral-700 cursor-pointer transition-colors">
-                  <div className="text-sm truncate">Database optimization</div>
-                  <div className="text-xs text-neutral-400 mt-1">
-                    1 week ago
-                  </div>
-                </div>
+                ) : (
+                  conversations.map((conversation) => (
+                    <div
+                      key={conversation.id}
+                      onClick={() => loadConversation(conversation.id)}
+                      className={`group p-3 rounded-lg cursor-pointer transition-colors relative ${
+                        currentConversationId === conversation.id
+                          ? "bg-neutral-700"
+                          : "hover:bg-neutral-700"
+                      }`}
+                    >
+                      <div className="text-sm truncate pr-6">
+                        {conversation.title}
+                      </div>
+                      <div className="text-xs text-neutral-400 mt-1">
+                        {formatTime(conversation.timestamp)}
+                      </div>
+                      <button
+                        onClick={(e) => deleteConversation(conversation.id, e)}
+                        className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-neutral-600 transition-all"
+                      >
+                        <svg
+                          className="w-3 h-3 text-neutral-400 hover:text-red-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
             <div className="p-4 border-t border-neutral-700">
               <button className="w-full text-left p-2 rounded-lg hover:bg-neutral-700 transition-colors flex items-center space-x-2">
-                <i data-fa-i2svg>
-                  <svg
-                    className="svg-inline--fa fa-gear w-5 h-5"
-                    aria-hidden="true"
-                    focusable="false"
-                    data-prefix="fas"
-                    data-icon="gear"
-                    role="img"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 512 512"
-                    data-fa-i2svg
-                  >
-                    <path
-                      fill="currentColor"
-                      d="M495.9 166.6c3.2 8.7 .5 18.4-6.4 24.6l-43.3 39.4c1.1 8.3 1.7 16.8 1.7 25.4s-.6 17.1-1.7 25.4l43.3 39.4c6.9 6.2 9.6 15.9 6.4 24.6c-4.4 11.9-9.7 23.3-15.8 34.3l-4.7 8.1c-6.6 11-14 21.4-22.1 31.2c-5.9 7.2-15.7 9.6-24.5 6.8l-55.7-17.7c-13.4 10.3-28.2 18.9-44 25.4l-12.5 57.1c-2 9.1-9 16.3-18.2 17.8c-13.8 2.3-28 3.5-42.5 3.5s-28.7-1.2-42.5-3.5c-9.2-1.5-16.2-8.7-18.2-17.8l-12.5-57.1c-15.8-6.5-30.6-15.1-44-25.4L83.1 425.9c-8.8 2.8-18.6 .3-24.5-6.8c-8.1-9.8-15.5-20.2-22.1-31.2l-4.7-8.1c-6.1-11-11.4-22.4-15.8-34.3c-3.2-8.7-.5-18.4 6.4-24.6l43.3-39.4C64.6 273.1 64 264.6 64 256s.6-17.1 1.7-25.4L22.4 191.2c-6.9-6.2-9.6-15.9-6.4-24.6c4.4-11.9 9.7-23.3 15.8-34.3l4.7-8.1c6.6-11 14-21.4 22.1-31.2c5.9-7.2 15.7-9.6 24.5-6.8l55.7 17.7c13.4-10.3 28.2-18.9 44-25.4l12.5-57.1c2-9.1 9-16.3 18.2-17.8C227.3 1.2 241.5 0 256 0s28.7 1.2 42.5 3.5c9.2 1.5 16.2 8.7 18.2 17.8l12.5 57.1c15.8 6.5 30.6 15.1 44 25.4l55.7-17.7c8.8-2.8 18.6-.3 24.5 6.8c8.1 9.8 15.5 20.2 22.1 31.2l4.7 8.1c6.1 11 11.4 22.4 15.8 34.3zM256 336a80 80 0 1 0 0-160 80 80 0 1 0 0 160z"
-                    />
-                  </svg>
-                </i>
+                <svg
+                  className="svg-inline--fa fa-gear w-5 h-5"
+                  aria-hidden="true"
+                  focusable="false"
+                  data-prefix="fas"
+                  data-icon="gear"
+                  role="img"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 512 512"
+                  data-fa-i2svg
+                >
+                  <path
+                    fill="currentColor"
+                    d="M495.9 166.6c3.2 8.7 .5 18.4-6.4 24.6l-43.3 39.4c1.1 8.3 1.7 16.8 1.7 25.4s-.6 17.1-1.7 25.4l43.3 39.4c6.9 6.2 9.6 15.9 6.4 24.6c-4.4 11.9-9.7 23.3-15.8 34.3l-4.7 8.1c-6.6 11-14 21.4-22.1 31.2c-5.9 7.2-15.7 9.6-24.5 6.8l-55.7-17.7c-13.4 10.3-28.2 18.9-44 25.4l-12.5 57.1c-2 9.1-9 16.3-18.2 17.8c-13.8 2.3-28 3.5-42.5 3.5s-28.7-1.2-42.5-3.5c-9.2-1.5-16.2-8.7-18.2-17.8l-12.5-57.1c-15.8-6.5-30.6-15.1-44-25.4L83.1 425.9c-8.8 2.8-18.6 .3-24.5-6.8c-8.1-9.8-15.5-20.2-22.1-31.2l-4.7-8.1c-6.1-11-11.4-22.4-15.8-34.3c-3.2-8.7-.5-18.4 6.4-24.6l43.3-39.4C64.6 273.1 64 264.6 64 256s.6-17.1 1.7-25.4L22.4 191.2c-6.9-6.2-9.6-15.9-6.4-24.6c4.4-11.9 9.7-23.3 15.8-34.3l4.7-8.1c6.6-11 14-21.4 22.1-31.2c5.9-7.2 15.7-9.6 24.5-6.8l55.7 17.7c13.4-10.3 28.2-18.9 44-25.4l12.5-57.1c2-9.1 9-16.3 18.2-17.8C227.3 1.2 241.5 0 256 0s28.7 1.2 42.5 3.5c9.2 1.5 16.2 8.7 18.2 17.8l12.5 57.1c15.8 6.5 30.6 15.1 44 25.4l55.7-17.7c8.8-2.8 18.6-.3 24.5 6.8c8.1 9.8 15.5 20.2 22.1 31.2l4.7 8.1c6.1 11 11.4 22.4 15.8 34.3zM256 336a80 80 0 1 0 0-160 80 80 0 1 0 0 160z"
+                  />
+                </svg>
                 <span>Settings</span>
               </button>
             </div>
@@ -208,23 +424,54 @@ const DashboardPage = () => {
                     msg.role === "user" ? "justify-end" : "justify-start"
                   }`}
                 >
+                  {msg.role === "assistant" && (
+                    <div className="flex-shrink-0 mr-3 self-end mb-4">
+                      <img
+                        src="https://api.dicebear.com/7.x/bottts/svg?seed=AI&scale=80&backgroundColor=65c9ff"
+                        alt="AI Avatar"
+                        className="w-8 h-8 rounded-full"
+                      />
+                    </div>
+                  )}
                   <div
                     className={`${
-                      msg.role === "user"
-                        ? "bg-neutral-600"
-                        : "bg-neutral-800 ml-11"
+                      msg.role === "user" ? "bg-neutral-600" : "bg-neutral-800"
                     } p-4 rounded-2xl ${
                       msg.role === "user"
                         ? "rounded-br-sm max-w-md"
                         : "rounded-bl-sm max-w-2xl"
                     }`}
                   >
-                    <p className="text-sm whitespace-pre-line">{msg.content}</p>
+                    {msg.role === "assistant" ? (
+                      <div className="text-sm">
+                        {formatMessageWithCode(msg.content)}
+                      </div>
+                    ) : (
+                      <p className="text-sm whitespace-pre-line">
+                        {msg.content}
+                      </p>
+                    )}
                   </div>
+                  {msg.role === "user" && (
+                    <div className="flex-shrink-0 ml-3 self-end mb-4">
+                      <img
+                        src="https://api.dicebear.com/7.x/notionists/svg?scale=200&seed=42"
+                        alt="User Avatar"
+                        className="w-8 h-8 rounded-full"
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
               {loading && (
-                <div className="flex justify-start">
+                <div className="flex justify-start items-center">
+                  <div className="flex-shrink-0 mr-3">
+                    <img
+                      src="https://api.dicebear.com/7.x/bottts/svg?seed=AI&scale=80&backgroundColor=65c9ff"
+                      alt="AI Avatar"
+                      className="w-8 h-8 rounded-full"
+                    />
+                  </div>
                   <div className="ml-11 text-sm text-neutral-400 animate-pulse">
                     AI is typing...
                   </div>
@@ -232,7 +479,7 @@ const DashboardPage = () => {
               )}
             </div>
 
-            {/* 👇 Keep the message input as-is but make it functional 👇 */}
+            {/* Message input */}
             <div id="message-input" className="border-t border-neutral-700 p-6">
               <div className="max-w-4xl mx-auto">
                 <div className="relative">
@@ -266,7 +513,6 @@ const DashboardPage = () => {
                   </button>
                 </div>
                 <div className="flex items-center justify-between mt-3">
-                  {/* Keep attachment & mic buttons */}
                   <span className="text-xs text-neutral-400">
                     Press Enter to send
                   </span>
