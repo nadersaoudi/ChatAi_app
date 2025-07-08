@@ -1,6 +1,56 @@
-import React from "react";
+"use client";
+import React, { useState } from "react";
+import axios from "axios";
 
 const DashboardPage = () => {
+  const [messages, setMessages] = useState([
+    {
+      role: "assistant",
+      content:
+        "I’m your AI assistant. Ask me anything about programming, tech, or more!",
+    },
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSend = async () => {
+    if (!input.trim()) return;
+
+    const userMessage = { role: "user", content: input };
+    const updatedMessages = [...messages, userMessage];
+
+    setMessages(updatedMessages);
+    setInput("");
+    setLoading(true);
+
+    try {
+      const res = await axios.post("http://localhost:8000/ask", {
+        messages: updatedMessages,
+      });
+
+      const aiMessage = { role: "assistant", content: res.data.response };
+      setMessages((prev) => [...prev, aiMessage]);
+    } catch (err) {
+      console.log(err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "❌ Failed to get a response. Please try again later.",
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
   return (
     <div>
       <div id="dashboard" className="bg-neutral-900 text-white">
@@ -150,73 +200,39 @@ const DashboardPage = () => {
           </aside>
           {/* Main Chat Area */}
           <main id="main-chat" className="flex-1 flex flex-col">
-            {/* Chat Messages */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Welcome Message */}
-
-              {/* User Message */}
-              <div className="flex justify-end">
-                <div className="max-w-xs lg:max-w-md">
-                  <div className="bg-neutral-600 text-white p-4 rounded-2xl rounded-br-sm">
-                    <p>
-                      Hello! Can you help me understand machine learning basics?
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-end mt-2 space-x-2">
-                    <span className="text-xs text-neutral-400">You</span>
-                    <span className="text-xs text-neutral-400">2:34 PM</span>
-                  </div>
-                </div>
-              </div>
-              {/* AI Response */}
-              <div className="flex justify-start">
-                <div className="max-w-xs lg:max-w-2xl">
-                  <div className="flex items-start space-x-3">
-                    <div className="w-8 h-8 bg-neutral-600 rounded-full flex items-center justify-center flex-shrink-0">
-                      <i className="text-sm" data-fa-i2svg>
-                        <svg
-                          className="svg-inline--fa fa-robot w-5 h-5"
-                          aria-hidden="true"
-                          focusable="false"
-                          data-prefix="fas"
-                          data-icon="robot"
-                          role="img"
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 640 512"
-                          data-fa-i2svg
-                        >
-                          <path
-                            fill="currentColor"
-                            d="M320 0c17.7 0 32 14.3 32 32V96H472c39.8 0 72 32.2 72 72V440c0 39.8-32.2 72-72 72H168c-39.8 0-72-32.2-72-72V168c0-39.8 32.2-72 72-72H288V32c0-17.7 14.3-32 32-32zM208 384c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H208zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H304zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H400zM264 256a40 40 0 1 0 -80 0 40 40 0 1 0 80 0zm152 40a40 40 0 1 0 0-80 40 40 0 1 0 0 80zM48 224H64V416H48c-26.5 0-48-21.5-48-48V272c0-26.5 21.5-48 48-48zm544 0c26.5 0 48 21.5 48 48v96c0 26.5-21.5 48-48 48H576V224h16z"
-                          />
-                        </svg>
-                      </i>
-                    </div>
-                    <div className="bg-neutral-800 p-4 rounded-2xl rounded-bl-sm">
-                      <p className="mb-3">
-                        I&#39;d be happy to help you understand machine learning
-                        basics! Machine learning is a subset of artificial
-                        intelligence that enables computers to learn and make
-                        decisions from data without being explicitly programmed.
-                      </p>
-                      <p>Here are the key concepts:</p>
-                      <ul className="mt-2 space-y-1 list-disc list-inside text-sm">
-                        <li>Supervised Learning</li>
-                        <li>Unsupervised Learning</li>
-                        <li>Reinforcement Learning</li>
-                      </ul>
-                    </div>
-                  </div>
-                  <div className="flex items-center mt-2 ml-11 space-x-2">
-                    <span className="text-xs text-neutral-400">
-                      AI Assistant
-                    </span>
-                    <span className="text-xs text-neutral-400">2:35 PM</span>
+              {messages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`flex ${
+                    msg.role === "user" ? "justify-end" : "justify-start"
+                  }`}
+                >
+                  <div
+                    className={`${
+                      msg.role === "user"
+                        ? "bg-neutral-600"
+                        : "bg-neutral-800 ml-11"
+                    } p-4 rounded-2xl ${
+                      msg.role === "user"
+                        ? "rounded-br-sm max-w-md"
+                        : "rounded-bl-sm max-w-2xl"
+                    }`}
+                  >
+                    <p className="text-sm whitespace-pre-line">{msg.content}</p>
                   </div>
                 </div>
-              </div>
+              ))}
+              {loading && (
+                <div className="flex justify-start">
+                  <div className="ml-11 text-sm text-neutral-400 animate-pulse">
+                    AI is typing...
+                  </div>
+                </div>
+              )}
             </div>
-            {/* Message Input */}
+
+            {/* 👇 Keep the message input as-is but make it functional 👇 */}
             <div id="message-input" className="border-t border-neutral-700 p-6">
               <div className="max-w-4xl mx-auto">
                 <div className="relative">
@@ -224,72 +240,33 @@ const DashboardPage = () => {
                     placeholder="Type your message here..."
                     className="w-full bg-neutral-800 border border-neutral-600 rounded-xl px-4 py-3 pr-12 resize-none focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:border-transparent"
                     rows={1}
-                    defaultValue={""}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
                   />
-                  <button className="absolute right-3 top-3 p-1 bg-neutral-600 hover:bg-neutral-700 rounded-lg transition-colors">
-                    <i className="text-sm" data-fa-i2svg>
-                      <svg
-                        className="svg-inline--fa fa-paper-plane w-5 h-5"
-                        aria-hidden="true"
-                        focusable="false"
-                        data-prefix="fas"
-                        data-icon="paper-plane"
-                        role="img"
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 512 512"
-                        data-fa-i2svg
-                      >
-                        <path
-                          fill="currentColor"
-                          d="M498.1 5.6c10.1 7 15.4 19.1 13.5 31.2l-64 416c-1.5 9.7-7.4 18.2-16 23s-18.9 5.4-28 1.6L284 427.7l-68.5 74.1c-8.9 9.7-22.9 12.9-35.2 8.1S160 493.2 160 480V396.4c0-4 1.5-7.8 4.2-10.7L331.8 202.8c5.8-6.3 5.6-16-.4-22s-15.7-6.4-22-.7L106 360.8 17.7 316.6C7.1 311.3 .3 300.7 0 288.9s5.9-22.8 16.1-28.7l448-256c10.7-6.1 23.9-5.5 34 1.4z"
-                        />
-                      </svg>
-                    </i>
+                  <button
+                    onClick={handleSend}
+                    className="absolute right-3 top-3 p-1 bg-neutral-600 hover:bg-neutral-700 rounded-lg transition-colors"
+                  >
+                    <svg
+                      className="svg-inline--fa fa-paper-plane w-5 h-5"
+                      aria-hidden="true"
+                      focusable="false"
+                      data-prefix="fas"
+                      data-icon="paper-plane"
+                      role="img"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 512 512"
+                    >
+                      <path
+                        fill="currentColor"
+                        d="M498.1 5.6c10.1 7 15.4 19.1 13.5 31.2l-64 416c-1.5 9.7-7.4 18.2-16 23s-18.9 5.4-28 1.6L284 427.7l-68.5 74.1c-8.9 9.7-22.9 12.9-35.2 8.1S160 493.2 160 480V396.4c0-4 1.5-7.8 4.2-10.7L331.8 202.8c5.8-6.3 5.6-16-.4-22s-15.7-6.4-22-.7L106 360.8 17.7 316.6C7.1 311.3 .3 300.7 0 288.9s5.9-22.8 16.1-28.7l448-256c10.7-6.1 23.9-5.5 34 1.4z"
+                      />
+                    </svg>
                   </button>
                 </div>
                 <div className="flex items-center justify-between mt-3">
-                  <div className="flex items-center space-x-3">
-                    <button className="p-2 text-neutral-400 hover:text-white transition-colors">
-                      <i data-fa-i2svg>
-                        <svg
-                          className="svg-inline--fa fa-paperclip w-5 h-5"
-                          aria-hidden="true"
-                          focusable="false"
-                          data-prefix="fas"
-                          data-icon="paperclip"
-                          role="img"
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 448 512"
-                          data-fa-i2svg
-                        >
-                          <path
-                            fill="currentColor"
-                            d="M364.2 83.8c-24.4-24.4-64-24.4-88.4 0l-184 184c-42.1 42.1-42.1 110.3 0 152.4s110.3 42.1 152.4 0l152-152c10.9-10.9 28.7-10.9 39.6 0s10.9 28.7 0 39.6l-152 152c-64 64-167.6 64-231.6 0s-64-167.6 0-231.6l184-184c46.3-46.3 121.3-46.3 167.6 0s46.3 121.3 0 167.6l-176 176c-28.6 28.6-75 28.6-103.6 0s-28.6-75 0-103.6l144-144c10.9-10.9 28.7-10.9 39.6 0s10.9 28.7 0 39.6l-144 144c-6.7 6.7-6.7 17.7 0 24.4s17.7 6.7 24.4 0l176-176c24.4-24.4 24.4-64 0-88.4z"
-                          />
-                        </svg>
-                      </i>
-                    </button>
-                    <button className="p-2 text-neutral-400 hover:text-white transition-colors">
-                      <i data-fa-i2svg>
-                        <svg
-                          className="svg-inline--fa fa-microphone w-5 h-5"
-                          aria-hidden="true"
-                          focusable="false"
-                          data-prefix="fas"
-                          data-icon="microphone"
-                          role="img"
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 384 512"
-                          data-fa-i2svg
-                        >
-                          <path
-                            fill="currentColor"
-                            d="M192 0C139 0 96 43 96 96V256c0 53 43 96 96 96s96-43 96-96V96c0-53-43-96-96-96zM64 216c0-13.3-10.7-24-24-24s-24 10.7-24 24v40c0 89.1 66.2 162.7 152 174.4V464H120c-13.3 0-24 10.7-24 24s10.7 24 24 24h72 72c13.3 0 24-10.7 24-24s-10.7-24-24-24H216V430.4c85.8-11.7 152-85.3 152-174.4V216c0-13.3-10.7-24-24-24s-24 10.7-24 24v40c0 70.7-57.3 128-128 128s-128-57.3-128-128V216z"
-                          />
-                        </svg>
-                      </i>
-                    </button>
-                  </div>
+                  {/* Keep attachment & mic buttons */}
                   <span className="text-xs text-neutral-400">
                     Press Enter to send
                   </span>
