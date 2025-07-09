@@ -1,7 +1,13 @@
+"use client";
+
 import Footer from "@/layouts/Footer";
 import Header from "@/layouts/Header";
+import Link from "next/link";
+import { SignedIn, SignedOut } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
+  const router = useRouter();
   return (
     <>
       <div>
@@ -20,30 +26,63 @@ export default function Home() {
                   task.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-                  <button className="bg-neutral-600 hover:bg-neutral-700 text-white px-8 py-4 rounded-lg text-lg transition-colors flex items-center justify-center">
-                    <i className="mr-2" data-fa-i2svg>
-                      <svg
-                        className="svg-inline--fa fa-play w-5 h-5"
-                        aria-hidden="true"
-                        focusable="false"
-                        data-prefix="fas"
-                        data-icon="play"
-                        role="img"
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 384 512"
-                        data-fa-i2svg
-                      >
-                        <path
-                          fill="currentColor"
-                          d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"
-                        />
-                      </svg>
-                    </i>
-                    Try the AI
-                  </button>
-                  <button className="border border-neutral-600 hover:border-neutral-500 text-white px-8 py-4 rounded-lg text-lg transition-colors">
-                    Login / Register
-                  </button>
+                  <SignedIn>
+                    <button
+                      className="bg-neutral-600 hover:bg-neutral-700 text-white px-8 py-4 rounded-lg text-lg transition-colors flex items-center justify-center"
+                      onClick={() => router.push("/dashboard")}
+                    >
+                      <i className="mr-2" data-fa-i2svg>
+                        <svg
+                          className="svg-inline--fa fa-play w-5 h-5"
+                          aria-hidden="true"
+                          focusable="false"
+                          data-prefix="fas"
+                          data-icon="play"
+                          role="img"
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 384 512"
+                          data-fa-i2svg
+                        >
+                          <path
+                            fill="currentColor"
+                            d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"
+                          />
+                        </svg>
+                      </i>
+                      Try the AI
+                    </button>
+                  </SignedIn>
+                  <SignedOut>
+                    <button
+                      className="bg-neutral-600 hover:bg-neutral-700 text-white px-8 py-4 rounded-lg text-lg transition-colors flex items-center justify-center"
+                      onClick={() => router.push("/sign-in")}
+                    >
+                      <i className="mr-2" data-fa-i2svg>
+                        <svg
+                          className="svg-inline--fa fa-play w-5 h-5"
+                          aria-hidden="true"
+                          focusable="false"
+                          data-prefix="fas"
+                          data-icon="play"
+                          role="img"
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 384 512"
+                          data-fa-i2svg
+                        >
+                          <path
+                            fill="currentColor"
+                            d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"
+                          />
+                        </svg>
+                      </i>
+                      Try the AI
+                    </button>
+                  </SignedOut>
+                  <Link href="/sign-in">
+                    <button className="border border-neutral-600 hover:border-neutral-500 text-white px-8 py-4 rounded-lg text-lg transition-colors">
+                      Login
+                    </button>
+                  </Link>
                 </div>
               </div>
               <div className="flex justify-center lg:justify-end">

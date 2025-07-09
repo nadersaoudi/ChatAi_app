@@ -1,4 +1,5 @@
 import React from "react";
+import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 
 const Header = () => {
   return (
@@ -40,12 +41,14 @@ const Header = () => {
             </span>
           </nav>
           <div className="flex items-center space-x-4">
-            <button className="text-neutral-300 hover:text-white transition-colors">
-              Login
-            </button>
-            <button className="bg-neutral-600 hover:bg-neutral-700 text-white px-4 py-2 rounded-lg transition-colors">
-              Sign Up
-            </button>
+            <SignedOut>
+              <button className="text-neutral-300 hover:text-white transition-colors">
+                Login
+              </button>
+            </SignedOut>
+            <SignedIn>
+              <UserButton />
+            </SignedIn>
           </div>
         </div>
       </div>
