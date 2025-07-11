@@ -90,7 +90,8 @@ const DashboardPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string>("");
-  const [useRag, setUseRag] = useState<boolean>(false);
+  // Set useRag to always true
+  const [useRag, setUseRag] = useState<boolean>(true);
   const [ragContext, setRagContext] = useState<string>("");
 
   useEffect(() => {
@@ -241,16 +242,32 @@ const DashboardPage: React.FC = () => {
   };
 
   // Delete conversation
-  const deleteConversation = (
+  const deleteConversation = async (
     conversationId: string,
     e: React.MouseEvent
-  ): void => {
+  ): Promise<void> => {
     e.stopPropagation();
-    setConversations((prev) =>
-      prev.filter((conv) => conv.id !== conversationId)
-    );
-    if (currentConversationId === conversationId) {
-      startNewConversation();
+    if (!user) return;
+    try {
+      const res = await fetch("http://localhost:8000/api/delete_conversation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: user.id,
+          conversation_id: conversationId,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConversations((prev) => prev.filter((conv) => conv.id !== conversationId));
+        if (currentConversationId === conversationId) {
+          startNewConversation();
+        }
+      } else {
+        alert("Failed to delete conversation: " + (data.error || "Unknown error"));
+      }
+    } catch (err) {
+      alert("Failed to delete conversation: " + err);
     }
   };
 
@@ -276,7 +293,6 @@ const DashboardPage: React.FC = () => {
           body: formData,
         });
         const ragData = await ragRes.json();
-        console.log("RAG results from backend:", ragData.results);
         if (ragData.results && ragData.results.length > 0) {
           ragContext = ragData.results.join("\n---\n");
           setRagContext(ragContext); // Save for UI display
@@ -289,24 +305,18 @@ const DashboardPage: React.FC = () => {
 
       // Compose messages for AI
       let messagesToSend;
-      if (ragContext) {
+      if (ragContext && ragContext.trim().length > 0) {
         messagesToSend = [
           {
             role: "system",
-            content: `You are a helpful assistant. ONLY use the following PDF content to answer the user's question. If the answer is not in the PDF, reply: 'Not found in PDF.'\n\nPDF content:\n${ragContext}`,
+            content: `You are a helpful assistant. If the answer to the user's question is in the following PDF content, use it. Otherwise, answer using your general knowledge.\n\nPDF content:\n${ragContext}`,
           },
-          {
-            role: "user",
-            content: input,
-          },
+          ...messages,
+          { role: "user", content: input }
         ];
       } else {
         messagesToSend = [...messages, { role: "user", content: input }];
       }
-      console.log(
-        "Prompt sent to AI:",
-        JSON.stringify(messagesToSend, null, 2)
-      );
 
       const response = await fetch("http://localhost:8000/ask", {
         method: "POST",
@@ -364,32 +374,32 @@ const DashboardPage: React.FC = () => {
     }
   };
 
+  // Remove the checkbox and upload button, and make PDF upload automatic
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setPdfFile(e.target.files[0]);
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!user || !pdfFile) return;
-    setUploadStatus("Uploading...");
-    const formData = new FormData();
-    formData.append("user_id", user.id);
-    formData.append("file", pdfFile);
-    try {
-      const res = await fetch("http://localhost:8000/api/upload_pdf", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json();
-      if (data.success) {
-        setUploadStatus(`Uploaded! Chunks: ${data.chunks}`);
-      } else {
-        setUploadStatus("Upload failed");
+      // Automatically upload on file select
+      if (user) {
+        setUploadStatus("Uploading...");
+        const formData = new FormData();
+        formData.append("user_id", user.id);
+        formData.append("file", e.target.files[0]);
+        fetch("http://localhost:8000/api/upload_pdf", {
+          method: "POST",
+          body: formData,
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.success) {
+              setUploadStatus("PDF uploaded!");
+            } else {
+              setUploadStatus("Upload failed");
+            }
+          })
+          .catch((err) => {
+            setUploadStatus("Upload error");
+          });
       }
-    } catch (err) {
-      console.log(err);
-      setUploadStatus("Upload error");
     }
   };
 
@@ -558,14 +568,7 @@ const DashboardPage: React.FC = () => {
               <main id="main-chat" className="flex-1 flex flex-col">
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
                   {/* Show RAG context if available */}
-                  {ragContext && (
-                    <div className="bg-yellow-100 text-yellow-900 p-4 rounded mb-4">
-                      <strong>PDF Context:</strong>
-                      <pre className="whitespace-pre-line text-xs mt-2">
-                        {ragContext}
-                      </pre>
-                    </div>
-                  )}
+
                   {messages.map((msg, idx) => (
                     <div
                       key={idx}
@@ -631,13 +634,14 @@ const DashboardPage: React.FC = () => {
                 {/* Message input */}
                 <div
                   id="message-input"
-                  className="border-t border-neutral-700 p-6"
+                  className="border-t border-neutral-700 p-6 bg-neutral-900"
                 >
-                  <div className="max-w-4xl mx-auto">
-                    <div className="relative flex items-center gap-2">
+                  <div className="max-w-4xl mx-auto flex flex-col gap-4">
+                    {/* Message Input Section */}
+                    <div className="flex flex-col md:flex-row gap-2 items-stretch">
                       <textarea
                         placeholder="Type your message here..."
-                        className="w-full bg-neutral-800 border border-neutral-600 rounded-xl px-4 py-3 pr-12 resize-none focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:border-transparent"
+                        className="w-full bg-neutral-800 border border-neutral-600 rounded-xl px-4 py-3 pr-12 resize-none focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:border-transparent min-h-[48px]"
                         rows={1}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
@@ -645,10 +649,11 @@ const DashboardPage: React.FC = () => {
                       />
                       <button
                         onClick={handleSend}
-                        className="p-1 bg-neutral-600 hover:bg-neutral-700 rounded-lg transition-colors ml-2"
+                        className="flex items-center justify-center px-5 py-3 bg-neutral-600 hover:bg-neutral-700 text-white font-semibold rounded-xl shadow transition-colors ml-0 md:ml-2 mt-2 md:mt-0 min-w-[56px]"
+                        title="Send message"
                       >
                         <svg
-                          className="svg-inline--fa fa-paper-plane w-5 h-5"
+                          className="w-5 h-5 mr-2"
                           aria-hidden="true"
                           focusable="false"
                           data-prefix="fas"
@@ -656,32 +661,38 @@ const DashboardPage: React.FC = () => {
                           role="img"
                           xmlns="http://www.w3.org/2000/svg"
                           viewBox="0 0 512 512"
-                          data-fa-i2svg
                         >
                           <path
                             fill="currentColor"
                             d="M498.1 5.6c10.1 7 15.4 19.1 13.5 31.2l-64 416c-1.5 9.7-7.4 18.2-16 23s-18.9 5.4-28 1.6L284 427.7l-68.5 74.1c-8.9 9.7-22.9 12.9-35.2 8.1S160 493.2 160 480V396.4c0-4 1.5-7.8 4.2-10.7L331.8 202.8c5.8-6.3 5.6-16-.4-22s-15.7-6.4-22-.7L106 360.8 17.7 316.6C7.1 311.3 .3 300.7 0 288.9s5.9-22.8 16.1-28.7l448-256c10.7-6.1 23.9-5.5 34 1.4z"
                           />
                         </svg>
+                        Send
                       </button>
+                    </div>
+
+                    {/* PDF Upload & RAG Controls Section */}
+                    <div className="flex flex-col md:flex-row gap-2 items-center bg-neutral-800 rounded-xl p-4 border border-neutral-700">
                       <label
                         htmlFor="pdf-upload"
-                        className="flex items-center cursor-pointer bg-neutral-700 hover:bg-neutral-600 text-white px-3 py-2 rounded ml-2"
+                        className="flex items-center cursor-pointer bg-neutral-700 hover:bg-neutral-600 text-white p-2 rounded transition-colors"
+                        title="Select a PDF to upload for RAG context"
                       >
+                        {/* Only show the provided SVG icon */}
                         <svg
-                          className="mr-2"
-                          width="20"
-                          height="20"
-                          viewBox="0 0 24 24"
-                          fill="none"
                           xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth={1.5}
+                          stroke="currentColor"
+                          className="size-6"
                         >
                           <path
-                            d="M6 2C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8.82843C20 8.29799 19.7893 7.78929 19.4142 7.41421L15.5858 3.58579C15.2107 3.21071 14.702 3 14.1716 3H6ZM6 0H14.1716C15.2337 0 16.2337 0.421427 16.8284 1.17157L20.6569 5C21.4069 5.59473 21.8284 6.59473 21.8284 7.65685V20C21.8284 22.2091 20.0375 24 17.8284 24H6C3.79086 24 2 22.2091 2 20V4C2 1.79086 3.79086 0 6 0ZM8 13V17H10V13H8ZM11 13V17H13V13H11ZM14 13V17H16V13H14Z"
-                            fill="#EF4444"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13"
                           />
                         </svg>
-                        {pdfFile ? pdfFile.name : "Select PDF"}
                         <input
                           id="pdf-upload"
                           type="file"
@@ -690,29 +701,15 @@ const DashboardPage: React.FC = () => {
                           className="hidden"
                         />
                       </label>
-                      <button
-                        className="px-3 py-2 bg-neutral-600 text-white rounded hover:bg-neutral-700 ml-1"
-                        onClick={handleUpload}
-                        disabled={!pdfFile || !user}
+                      <span
+                        className="text-xs text-neutral-400 ml-0 md:ml-2"
+                        title="Upload a PDF to enable retrieval-augmented generation (RAG) from your documents."
                       >
-                        Upload PDF
-                      </button>
-                      <input
-                        type="checkbox"
-                        id="useRag"
-                        checked={useRag}
-                        onChange={(e) => setUseRag(e.target.checked)}
-                        className="ml-2"
-                      />
-                      <label
-                        htmlFor="useRag"
-                        className="text-neutral-300 text-sm ml-1 select-none"
-                      >
-                        Use PDF context (RAG)
-                      </label>
+                        Upload a PDF to use its content for smarter answers.
+                      </span>
                     </div>
                     {uploadStatus && (
-                      <div className="text-neutral-400 mt-2">
+                      <div className="text-green-400 mt-1 text-sm font-medium">
                         {uploadStatus}
                       </div>
                     )}

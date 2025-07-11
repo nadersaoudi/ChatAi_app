@@ -7,3 +7,5 @@ langchain
 PyPDF2
 openai
 sentence-transformers
+faiss-cpu
+langchain_community

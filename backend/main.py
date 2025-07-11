@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Literal, Any, Optional
@@ -140,3 +140,15 @@ def vector_health():
         return {"status": "ok", "pdf_chunks_count": count, "vector_index": vector_index}
     except Exception as e:
         return {"status": "error", "error": str(e)}
+
+@app.post("/api/delete_conversation")
+def delete_conversation(
+    user_id: str = Body(...),
+    conversation_id: str = Body(...)
+):
+    conversations_col = get_conversations_collection()
+    result = conversations_col.delete_one({"user_id": user_id, "conversation_id": conversation_id})
+    if result.deleted_count == 1:
+        return {"success": True}
+    else:
+        return {"success": False, "error": "Conversation not found or could not be deleted."}

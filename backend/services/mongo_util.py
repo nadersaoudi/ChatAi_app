@@ -14,4 +14,7 @@ def get_conversations_collection():
     return db["conversations"]
 
 def get_pdf_chunks_collection():
-    return db["pdf_chunks"] 
+    return db["pdf_chunks"]
+
+def get_user_memory_collection():
+    return db["user_memory"] 

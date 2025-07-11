@@ -1,25 +1,37 @@
+# NOTE: Requires 'faiss-cpu' and 'langchain_community' packages. Install with:
+# pip install faiss-cpu langchain_community
 import os
 import logging
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_mongodb import MongoDBAtlasVectorSearch
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from pymongo import MongoClient
+import pickle
 
-MONGO_URI = os.getenv("MONGO_URI")
-DB_NAME = os.getenv("MONGO_DB_NAME")
+def get_faiss_index_path(user_id):
+    return os.getenv("FAISS_INDEX_PATH", f"faiss_index_{user_id}")
 
-client = MongoClient(MONGO_URI)
-db = client[DB_NAME]
 # Set up HuggingFace embeddings (no API key required)
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-# Set up MongoDB vector store
-vectorstore = MongoDBAtlasVectorSearch(
-    collection=db["pdf_chunks"],
-    embedding=embeddings,
-    index_name="vector_index",  # You must create this index in Atlas
-)
+# Helper to load or create FAISS index for a user
+def load_faiss_index(user_id):
+    index_path = get_faiss_index_path(user_id)
+    if os.path.exists(index_path):
+        try:
+            return FAISS.load_local(
+                index_path,
+                embeddings,
+                allow_dangerous_deserialization=True
+            )
+        except Exception as e:
+            logging.error(f"[ERROR] Failed to load FAISS index for user {user_id}: {e}")
+    return None
+
+def save_faiss_index(faiss_index, user_id):
+    index_path = get_faiss_index_path(user_id)
+    faiss_index.save_local(index_path)
+
 
 def process_and_store_pdf(file_path, user_id, pdf_id):
     try:
@@ -39,39 +51,46 @@ def process_and_store_pdf(file_path, user_id, pdf_id):
             chunk.metadata["chunk_id"] = i
             chunk.metadata["original_text"] = getattr(chunk, 'text', getattr(chunk, 'page_content', ''))
             chunk.page_content = chunk.metadata["original_text"]
-        try:
-            vectorstore.add_documents(chunks)
-            logging.info(f"[INFO] Stored {len(chunks)} chunks for user {user_id}, pdf_id {pdf_id}")
-            if chunks:
-                logging.info(f"[INFO] First chunk metadata: {chunks[0].metadata}")
-        except Exception as ve:
-            logging.error(f"[ERROR] Failed to add documents to vectorstore: {ve}")
-            return 0, [], f"Vectorstore error: {ve}"
+        # Remove old FAISS index for this user before creating a new one
+        index_path = get_faiss_index_path(user_id)
+        if os.path.exists(index_path):
+            os.remove(index_path)
+        faiss_index = FAISS.from_documents(chunks, embeddings)
+        save_faiss_index(faiss_index, user_id)
+        logging.info(f"[INFO] Stored {len(chunks)} chunks for user {user_id}, pdf_id {pdf_id}")
+        if chunks:
+            logging.info(f"[INFO] First chunk metadata: {chunks[0].metadata}")
         return len(chunks), [chunk.metadata for chunk in chunks[:1]], None
     except Exception as e:
         logging.error(f"[ERROR] process_and_store_pdf failed: {e}")
         return 0, [], str(e)
 
+
 def query_rag(user_id, query, top_k=4):
     try:
-        filter = {"user_id": user_id}
-        results = vectorstore.similarity_search(query, k=top_k, filter=filter)
-        logging.info(f"[INFO] RAG query for user {user_id}: '{query}' returned {len(results)} results.")
-        if not results:
-            # Count chunks for this user for debug
-            from services.mongo_util import get_pdf_chunks_collection
-            col = get_pdf_chunks_collection()
-            chunk_count = col.count_documents({"metadata.user_id": user_id})
-            return [], f"No results found. Chunks for user: {chunk_count}, Query: {query}"
-        return [r.page_content for r in results], None
+        faiss_index = load_faiss_index(user_id)
+        if faiss_index is None:
+            logging.error(f"[ERROR] FAISS index not found for user {user_id}.")
+            return [], "FAISS index not found."
+        # Filter by user_id in metadata (should only be this user's docs)
+        all_results = faiss_index.similarity_search_with_score(query, k=top_k*3)
+        filtered = [doc for doc, score in all_results if doc.metadata.get("user_id") == user_id]
+        filtered = filtered[:top_k]
+        logging.info(f"[INFO] RAG query for user {user_id}: '{query}' returned {len(filtered)} results.")
+        return [r.page_content for r in filtered], None
     except Exception as e:
         logging.error(f"[ERROR] query_rag failed: {e}")
         return [], str(e)
 
+
 def list_chunks_for_user(user_id, pdf_id=None):
-    from services.mongo_util import get_pdf_chunks_collection
-    col = get_pdf_chunks_collection()
-    query = {"metadata.user_id": user_id}
-    if pdf_id:
-        query["metadata.pdf_id"] = pdf_id
-    return list(col.find(query, {"_id": 0, "metadata": 1})) 
+    faiss_index = load_faiss_index(user_id)
+    if faiss_index is None:
+        return []
+    all_docs = faiss_index.docstore._dict.values()
+    results = []
+    for doc in all_docs:
+        if doc.metadata.get("user_id") == user_id:
+            if pdf_id is None or doc.metadata.get("pdf_id") == pdf_id:
+                results.append({"metadata": doc.metadata})
+    return results 
