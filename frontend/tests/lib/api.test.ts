@@ -1,12 +1,17 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi, Mock } from "vitest";
 import { ApiError, askChat, fetchModels } from "@/lib/api";
 
-function mockFetch(body: unknown, status = 200) {
-  const fetchMock = vi.fn(async () =>
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { "Content-Type": "application/json" },
-    })
+type FetchMock = Mock<
+  (url: string | URL | Request, init?: RequestInit) => Promise<Response>
+>;
+
+function mockFetch(body: unknown, status = 200): FetchMock {
+  const fetchMock: FetchMock = vi.fn(
+    async () =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      })
   );
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
@@ -21,9 +26,9 @@ describe("askChat", () => {
     const fetchMock = mockFetch({ response: "hi", model: "m" });
     const data = await askChat([{ role: "user", content: "hello" }], "my-model");
     expect(data).toEqual({ response: "hi", model: "m" });
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0];
     expect(url).toContain("/ask");
-    expect(JSON.parse(init.body as string)).toEqual({
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       messages: [{ role: "user", content: "hello" }],
       model: "my-model",
     });
@@ -32,8 +37,8 @@ describe("askChat", () => {
   it("sends model: null when auto", async () => {
     const fetchMock = mockFetch({ response: "hi" });
     await askChat([{ role: "user", content: "hello" }]);
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(init.body as string).model).toBeNull();
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse((init as RequestInit).body as string).model).toBeNull();
   });
 });
 
