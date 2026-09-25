@@ -89,6 +89,9 @@ directly from the browser, so CORS must allow the frontend origin.
   landing page ships zero auth JS. `SignedIn`/`SignedOut` gate the dashboard
   (`RedirectToSignIn` when signed out). The Clerk `user.id` is the backend's
   `user_id` everywhere. No `middleware.ts` — route guards are client-side.
+  The `(dashboard)` group is `force-dynamic` (per-user routes are never
+  prerendered), so `next build` succeeds without Clerk keys present —
+  keys are still required at runtime.
 - **State:** `useConversationHistory` owns the sidebar (register user → load
   history once per login; optimistic track/select/delete; `loading` drives
   skeletons). `useChat` owns the transcript (send → best-effort RAG context →
