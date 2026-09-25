@@ -56,23 +56,101 @@ jobs:
         run: npm test
       - name: Production build
         run: npm run build
+        # Secrets first, repo Variables as fallback (both supported).
         env:
-          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || vars.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY || vars.CLERK_SECRET_KEY }}
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL || vars.NEXT_PUBLIC_API_URL }}
 
-  # ---------------- SonarQube (self-hosted or SonarCloud-compatible) ----------------
+  # ---------------- SonarQube (ephemeral service inside CI) ----------------
+  # Your laptop's SonarQube (e.g. host.docker.internal) is NOT reachable
+  # from GitHub runners — so CI boots its own SonarQube container,
+  # provisions a token via API, scans, then throws it away. Your local
+  # SonarQube stays for local scans (see README).
   sonar:
     needs: [backend, frontend]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      sonarqube:
+        image: sonarqube:community
+        ports:
+          - 9000:9000
+        env:
+          SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # full history for blame data
+      - name: Bootstrap SonarQube token
+        id: bootstrap
+        run: |
+          python3 - <<'PYEOF'
+          import base64
+          import json
+          import os
+          import sys
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          BASE = "http://localhost:9000"
+          ADMIN_PW = "CodenixCI-ephemeral-01"  # throwaway instance only
+
+
+          def req(method, path, auth=None, data=None):
+              body, headers = None, {}
+              if data is not None:
+                  body = urllib.parse.urlencode(data).encode()
+                  headers["Content-Type"] = "application/x-www-form-urlencoded"
+              if auth:
+                  headers["Authorization"] = "Basic " + base64.b64encode(
+                      auth.encode()
+                  ).decode()
+              r = urllib.request.Request(BASE + path, data=body, headers=headers, method=method)
+              try:
+                  with urllib.request.urlopen(r, timeout=10) as resp:
+                      return resp.status, resp.read().decode()
+              except urllib.error.HTTPError as e:
+                  return e.code, e.read().decode()
+
+
+          for _ in range(60):
+              try:
+                  code, body = req("GET", "/api/system/status")
+                  if code == 200 and json.loads(body).get("status") == "UP":
+                      break
+              except Exception:
+                  pass
+              time.sleep(10)
+          else:
+              sys.exit("SonarQube did not become UP in time")
+
+          req(
+              "POST",
+              "/api/users/change_password",
+              auth="admin:admin",
+              data={"login": "admin", "password": ADMIN_PW, "previousPassword": "admin"},
+          )
+          code, body = req(
+              "POST",
+              "/api/user_tokens/generate",
+              auth=f"admin:{ADMIN_PW}",
+              data={"name": "ci"},
+          )
+          if code != 200:
+              sys.exit(f"token generation failed: {code} {body}")
+          token = json.loads(body)["token"]
+          print("::add-mask::" + token)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"token={token}\n")
+          print("SonarQube ready at " + BASE)
+          PYEOF
       - uses: sonarsource/sonarqube-scan-action@v4
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ steps.bootstrap.outputs.token }}
+          SONAR_HOST_URL: http://localhost:9000
 
   # ---------------- 10k-user load test (infra endpoints, no Groq quota) ----------------
   loadtest-10k:
@@ -85,7 +163,7 @@ jobs:
       run:
         working-directory: backend
     env:
-      MONGO_URI: ${{ secrets.MONGO_URI }}
+      MONGO_URI: ${{ secrets.MONGO_URI || vars.MONGO_URI }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

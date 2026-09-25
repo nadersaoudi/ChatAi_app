@@ -88,20 +88,31 @@ push / PR
      → report.html + CSV uploaded as Actions artifacts
 ```
 
-Manual 10k run with custom size: Actions → CI → Run workflow → set
-`users` / `duration`. Results download from the run's Artifacts
-(`loadtest-10k-results`: `report.html` + `load-*.csv`).
+Manual 10k run with custom size: Actions → CI → Run workflow (works on any
+branch — select it in the dropdown) → set `users` / `duration`. The job is
+skipped on plain pushes/PRs by design (`if:` gate — too heavy for every
+push); it runs automatically only on `main` pushes. Results download from
+the run's Artifacts (`loadtest-10k-results`: `report.html` + `load-*.csv`).
 
-### Required GitHub secrets (repo → Settings → Secrets → Actions)
+### SonarQube: CI vs local
+
+- **CI is self-contained**: the `sonar` job boots an ephemeral SonarQube
+  container, provisions a token via API, scans, and discards it. Your
+  laptop's SonarQube (`host.docker.internal`, `localhost:9000`…) is
+  **unreachable from GitHub runners** — never put it in CI secrets.
+- **Your local SonarQube** stays for local scans (command below).
+
+### Required GitHub values (Secrets *or* repository Variables — the workflow
+accepts both via `${{ secrets.X || vars.X }}`; prefer **Secrets** for tokens
+since Variables display their values in the UI)
 
 | Secret | Used by | Notes |
 |---|---|---|
-| `SONAR_TOKEN` | sonar | User token (SonarQube → My Account → Security) |
-| `SONAR_HOST_URL` | sonar | e.g. your SonarQube server URL |
 | `MONGO_URI` | loadtest-10k | Atlas must allow CI egress IPs (or `0.0.0.0/0` for tests) |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | frontend build | Test keys are fine |
 | `CLERK_SECRET_KEY` | frontend build | Required to prerender dashboard/sign-in |
 | `NEXT_PUBLIC_API_URL` | frontend build | Backend URL baked into the build (optional) |
+| `SONAR_TOKEN` / `SONAR_HOST_URL` | — | Only for a self-hosted external server; CI spins its own SonarQube, local scans use `-D` flags (below) |
 
 `GROQ_API_KEY` is intentionally **not** needed: the 10k run uses
 `--exclude-tags ai` (no Groq calls, no quota burn). For an AI-inclusive soak,
