@@ -1,0 +1,4 @@
+# Backend tests only (kept out of requirements.txt so the app stays lean).
+pytest
+pytest-asyncio
+httpx

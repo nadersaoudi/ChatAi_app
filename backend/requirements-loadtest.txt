@@ -1,0 +1,2 @@
+# Load-testing only (kept out of requirements.txt so the app stays lean).
+locust

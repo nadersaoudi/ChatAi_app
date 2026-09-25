@@ -1,0 +1,118 @@
+name: CI
+
+# Full pipeline: build + unit tests → SonarQube → 10k-user load test.
+# The heavy load test runs on pushes to main and on manual dispatch only
+# (workflow_dispatch lets you override users/duration).
+on:
+  push:
+    branches: [dev-local, refactoring-change-style]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      users:
+        description: "Concurrent Locust users"
+        default: "10000"
+      duration:
+        description: "Soak duration (e.g. 8m)"
+        default: "8m"
+
+jobs:
+  # ---------------- backend: install + pytest ----------------
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-test.txt
+      - name: Unit tests
+        run: python -m pytest -q
+
+  # ---------------- frontend: lint + typecheck + tests + build ----------------
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+
+  # ---------------- SonarQube (self-hosted or SonarCloud-compatible) ----------------
+  sonar:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for blame data
+      - uses: sonarsource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+  # ---------------- 10k-user load test (infra endpoints, no Groq quota) ----------------
+  loadtest-10k:
+    # Runs on main pushes + manual dispatch (too heavy for every PR).
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    needs: [backend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-loadtest.txt
+      - name: Start backend
+        run: |
+          nohup python -m uvicorn main:app --port 8000 --workers 2 --limit-concurrency 2000 > uvicorn.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/health && break
+            sleep 2
+          done
+          curl -sf http://localhost:8000/health
+      - name: 10k-user soak (infra only — no Groq calls)
+        run: |
+          mkdir -p results
+          python -m locust -f loadtest/locustfile.py --host http://localhost:8000 \
+            --headless -u ${{ github.event.inputs.users || '10000' }} -r 500 \
+            -t ${{ github.event.inputs.duration || '8m' }} \
+            --exclude-tags ai --csv results/load --html results/report.html
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loadtest-10k-results
+          path: |
+            backend/results/
+            backend/uvicorn.log
