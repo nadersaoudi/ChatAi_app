@@ -1,0 +1,196 @@
+name: CI
+
+# Full pipeline: build + unit tests → SonarQube → 10k-user load test.
+# The heavy load test runs on pushes to main and on manual dispatch only
+# (workflow_dispatch lets you override users/duration).
+on:
+  push:
+    branches: [dev-local, refactoring-change-style]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      users:
+        description: "Concurrent Locust users"
+        default: "10000"
+      duration:
+        description: "Soak duration (e.g. 8m)"
+        default: "8m"
+
+jobs:
+  # ---------------- backend: install + pytest ----------------
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-test.txt
+      - name: Unit tests
+        run: python -m pytest -q
+
+  # ---------------- frontend: lint + typecheck + tests + build ----------------
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+        # Secrets first, repo Variables as fallback (both supported).
+        env:
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || vars.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY || vars.CLERK_SECRET_KEY }}
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL || vars.NEXT_PUBLIC_API_URL }}
+
+  # ---------------- SonarQube (ephemeral service inside CI) ----------------
+  # Your laptop's SonarQube (e.g. host.docker.internal) is NOT reachable
+  # from GitHub runners — so CI boots its own SonarQube container,
+  # provisions a token via API, scans, then throws it away. Your local
+  # SonarQube stays for local scans (see README).
+  sonar:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      sonarqube:
+        image: sonarqube:community
+        ports:
+          - 9000:9000
+        env:
+          SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for blame data
+      - name: Bootstrap SonarQube token
+        id: bootstrap
+        run: |
+          python3 - <<'PYEOF'
+          import base64
+          import json
+          import os
+          import sys
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          BASE = "http://localhost:9000"
+          ADMIN_PW = "CodenixCI-ephemeral-01"  # throwaway instance only
+
+
+          def req(method, path, auth=None, data=None):
+              body, headers = None, {}
+              if data is not None:
+                  body = urllib.parse.urlencode(data).encode()
+                  headers["Content-Type"] = "application/x-www-form-urlencoded"
+              if auth:
+                  headers["Authorization"] = "Basic " + base64.b64encode(
+                      auth.encode()
+                  ).decode()
+              r = urllib.request.Request(BASE + path, data=body, headers=headers, method=method)
+              try:
+                  with urllib.request.urlopen(r, timeout=10) as resp:
+                      return resp.status, resp.read().decode()
+              except urllib.error.HTTPError as e:
+                  return e.code, e.read().decode()
+
+
+          for _ in range(60):
+              try:
+                  code, body = req("GET", "/api/system/status")
+                  if code == 200 and json.loads(body).get("status") == "UP":
+                      break
+              except Exception:
+                  pass
+              time.sleep(10)
+          else:
+              sys.exit("SonarQube did not become UP in time")
+
+          req(
+              "POST",
+              "/api/users/change_password",
+              auth="admin:admin",
+              data={"login": "admin", "password": ADMIN_PW, "previousPassword": "admin"},
+          )
+          code, body = req(
+              "POST",
+              "/api/user_tokens/generate",
+              auth=f"admin:{ADMIN_PW}",
+              data={"name": "ci"},
+          )
+          if code != 200:
+              sys.exit(f"token generation failed: {code} {body}")
+          token = json.loads(body)["token"]
+          print("::add-mask::" + token)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"token={token}\n")
+          print("SonarQube ready at " + BASE)
+          PYEOF
+      - uses: sonarsource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ steps.bootstrap.outputs.token }}
+          SONAR_HOST_URL: http://localhost:9000
+
+  # ---------------- 10k-user load test (infra endpoints, no Groq quota) ----------------
+  loadtest-10k:
+    # Runs on main pushes + manual dispatch (too heavy for every PR).
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    needs: [backend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      MONGO_URI: ${{ secrets.MONGO_URI || vars.MONGO_URI }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-loadtest.txt
+      - name: Start backend
+        run: |
+          nohup python -m uvicorn main:app --port 8000 --workers 2 --limit-concurrency 2000 > uvicorn.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/health && break
+            sleep 2
+          done
+          curl -sf http://localhost:8000/health
+      - name: 10k-user soak (infra only — no Groq calls)
+        run: |
+          mkdir -p results
+          python -m locust -f loadtest/locustfile.py --host http://localhost:8000 \
+            --headless -u ${{ github.event.inputs.users || '10000' }} -r 500 \
+            -t ${{ github.event.inputs.duration || '8m' }} \
+            --exclude-tags ai --csv results/load --html results/report.html
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loadtest-10k-results
+          path: |
+            backend/results/
+            backend/uvicorn.log

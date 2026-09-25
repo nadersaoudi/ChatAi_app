@@ -1,28 +1,266 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --animate-fade-up: fade-up 0.45s ease both;
+  --animate-typing-dot: typing-dot 1.2s ease-in-out infinite;
+}
+
+/* ---------- user theme tokens (shadcn-style, oklch) ---------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.52 0.105 223.128);
+  --primary-foreground: oklch(0.984 0.019 200.873);
+  --secondary: oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.52 0.105 223.128);
+  --accent-foreground: oklch(0.984 0.019 200.873);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.609 0.126 221.723);
+  --sidebar-primary-foreground: oklch(0.984 0.019 200.873);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  /* app mappings */
+  --bg0: var(--background);
+  --surface: var(--card);
+  --surface-2: var(--secondary);
+  --surface-soft: var(--card);
+  --line: var(--border);
+  --line-strong: var(--primary);
+  --txt: var(--foreground);
+  --dim: var(--muted-foreground);
+  --faint: oklch(0.72 0 0);
+  --accent-2: oklch(0.609 0.126 221.723);
+  --glow-1: oklch(0.52 0.105 223.128 / 8%);
+  --glow-2: oklch(0.609 0.126 221.723 / 7%);
+  --glow-3: oklch(0.52 0.105 223.128 / 6%);
+  --skeleton: var(--muted);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.45 0.085 224.283);
+  --primary-foreground: oklch(0.984 0.019 200.873);
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.45 0.085 224.283);
+  --accent-foreground: oklch(0.984 0.019 200.873);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.715 0.143 215.221);
+  --sidebar-primary-foreground: oklch(0.302 0.056 229.695);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* app mappings */
+  --bg0: var(--background);
+  --surface: var(--card);
+  --surface-2: var(--secondary);
+  --surface-soft: var(--card);
+  --line: var(--border);
+  --line-strong: var(--primary);
+  --txt: var(--foreground);
+  --dim: var(--muted-foreground);
+  --faint: oklch(0.55 0 0);
+  --accent-2: oklch(0.865 0.127 207.078);
+  --glow-1: oklch(0.45 0.085 224.283 / 16%);
+  --glow-2: oklch(0.609 0.126 221.723 / 10%);
+  --glow-3: oklch(0.45 0.085 224.283 / 8%);
+  --skeleton: var(--muted);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+}
+
+/* ---------- semantic surfaces (layered so Tailwind hover:/focus: win) ---------- */
+@layer components {
+.app-bg {
+  background:
+    radial-gradient(42rem 22rem at 12% -6%, var(--glow-1), transparent 60%),
+    radial-gradient(38rem 20rem at 88% -4%, var(--glow-2), transparent 60%),
+    radial-gradient(60rem 34rem at 50% 115%, var(--glow-3), transparent 65%),
+    var(--bg0);
+  color: var(--txt);
+}
+
+.glass-bar {
+  background: color-mix(in srgb, var(--surface-soft) 82%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+
+.surface {
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.surface-2 {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.line {
+  border-color: var(--line);
+}
+
+.text-dim {
+  color: var(--dim);
+}
+.text-faint {
+  color: var(--faint);
+}
+
+.input-box {
+  background: var(--surface);
+  border: 1px solid var(--input);
+  color: var(--txt);
+}
+.input-box::placeholder {
+  color: var(--faint);
+}
+.input-box:focus {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent);
+}
+
+.bubble-user {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 0 8px 24px -12px color-mix(in srgb, var(--primary) 60%, transparent);
+}
+.bubble-assistant {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--txt);
+  box-shadow: 0 6px 18px -12px rgba(0, 0, 0, 0.35);
+}
+.bubble-error {
+  background: color-mix(in srgb, var(--destructive) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--destructive) 45%, transparent);
+  color: var(--txt);
+}
+
+.chip {
+  background: var(--secondary);
+  border: 1px solid var(--line);
+  color: var(--secondary-foreground);
+}
+
+.skeleton-bar {
+  background: var(--skeleton);
+}
+
+.text-gradient {
+  background: linear-gradient(100deg, var(--accent) 0%, var(--accent-2) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.brand-gradient {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+}
+
+.btn-gradient {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.btn-gradient:hover {
+  filter: brightness(1.1);
+}
+
+/* icon buttons that adapt to theme */
+.icon-btn {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--dim);
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.icon-btn:hover {
+  color: var(--txt);
+  border-color: var(--line-strong);
+}
+} /* end @layer components */
+
+/* ---------- motion ---------- */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* ---------- scrollbars ---------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent) 55%, transparent) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 pre {

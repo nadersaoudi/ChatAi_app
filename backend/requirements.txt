@@ -4,8 +4,10 @@ python-dotenv
 groq
 pymongo
 langchain
-PyPDF2
-openai
+langchain-community
+langchain-text-splitters
+langchain-huggingface
 sentence-transformers
 faiss-cpu
-langchain_community
+python-multipart
+pypdf
