@@ -1,0 +1,39 @@
+# Codenix full stack without Atlas: backend + self-hosted MongoDB.
+# Usage:
+#   1. cp backend/.env.example backend/.env   (GROQ_API_KEY + Clerk-side config;
+#      leave MONGO_URI empty — compose overrides it below)
+#   2. docker compose up --build
+#   3. API → http://localhost:8000/docs | frontend `npm run dev` as usual
+# Data persists in named volumes (mongo-data, faiss-data).
+# For a locked-down server, drop the mongo `ports:` mapping below.
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mongo
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB_NAME: chatai_app
+      FAISS_INDEX_PATH: faiss_data
+      CORS_ORIGINS: http://localhost:3000
+    env_file:
+      - path: ./backend/.env # GROQ_API_KEY, GROQ_MODEL, ... (MONGO_* above win)
+        required: false
+    volumes:
+      - faiss-data:/code/faiss_data
+
+volumes:
+  mongo-data:
+  faiss-data:
