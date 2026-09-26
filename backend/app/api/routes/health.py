@@ -15,3 +15,13 @@ def health() -> dict:
         "groq_model": settings.groq_model,
         "mongo_configured": bool(settings.mongo_uri),
     }
+
+
+@router.get("/")
+def root() -> dict:
+    return {
+        "service": "Codenix API",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "health": "/health",
+    }

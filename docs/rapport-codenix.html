@@ -55,6 +55,9 @@
 <li><a href="#sec-13">Stratégie de versions et montée de version</a></li>
 <li><a href="#sec-14">Technologies à adopter</a></li>
 <li><a href="#sec-15">Roadmap des fonctionnalités + Conclusion</a></li>
+<li><a href="#sec-16">RAG approfondi (entretien)</a></li>
+<li><a href="#sec-17">LLM &amp; Groq approfondis (entretien)</a></li>
+<li><a href="#sec-18">Fiche d'entretien express (Q/R)</a></li>
 </ol></div>
 
 <h2 id="sec-1">1. Présentation générale</h2>
@@ -127,6 +130,58 @@ flowchart TB
   Client --> MW --> Routes --> Schemas --> Services --> Prov
 </div></div>
 <p><code>main.py</code> ne contient que la fabrique (CORS, GZip, lifespan). Les routes sont fines, les schémas valident, les services portent le métier. Erreurs mappées : 503 (dépendances), 502 (provider avec cause), 500 (filet).</p>
+<h3>Arborescence du dossier backend</h3>
+<pre>backend/
+├── main.py                   # entrée uvicorn : uvicorn main:app
+├── Dockerfile                # image prod (Render / Docker)
+├── requirements.txt          # dépendances applicatives
+├── requirements-test.txt     # pytest, pytest-asyncio, httpx
+├── requirements-loadtest.txt # locust (charge 10k users)
+├── pytest.ini                # config tests (asyncio auto)
+├── .env.example              # modèle des variables d'environnement
+├── loadtest/locustfile.py    # scénario de charge (tags ai / infra)
+├── tests/                    # 30 tests : test_api, test_ai_service, test_rag_service
+└── app/
+    ├── main.py               # fabrique : CORS, GZip, lifespan, Swagger/OpenAPI
+    ├── core/                 # config.py (env centralisé), logging.py
+    ├── schemas/              # modèles Pydantic : chat, conversations, rag
+    ├── api/
+    │   ├── deps.py           # décorateur : erreurs métier → codes HTTP
+    │   └── routes/           # chat.py, conversations.py, rag.py, health.py
+    └── services/
+        ├── ai_service.py     # AsyncGroq, fallback multi-modèles, sanitize
+        ├── mongo_service.py  # client paresseux, pool 50, index au démarrage
+        └── rag_service.py    # ingestion PDF, FAISS par user + cache mtime</pre>
+<h3>Configuration Groq en détail</h3>
+<table>
+<tr><th>Variable</th><th>Défaut</th><th>Rôle</th></tr>
+<tr><td><code>GROQ_API_KEY</code></td><td>— (obligatoire)</td><td>Clé API. Jamais loggée ; absente → 503 explicite au lieu d'un crash au boot (client paresseux).</td></tr>
+<tr><td><code>GROQ_MODEL</code></td><td><code>openai/gpt-oss-20b</code></td><td>Modèle principal (vérifié accessible). Modifiable par requête (allow-list).</td></tr>
+<tr><td><code>GROQ_FALLBACK_MODELS</code></td><td>Llama 3.1 8B, Llama 4 Scout, Qwen3 32B, GPT-OSS 120B</td><td>Chaîne de secours sur <code>model_not_found</code> uniquement.</td></tr>
+<tr><td><code>GROQ_TIMEOUT_SECONDS</code></td><td>60</td><td>Timeout HTTP du client <code>AsyncGroq</code> (singleton partagé).</td></tr>
+<tr><td><code>GROQ_MAX_TOKENS</code></td><td>4096</td><td>Les modèles de raisonnement consomment des tokens en réfléchissant ; 1024 tronquait les longues réponses.</td></tr>
+</table>
+<p><strong>Chaîne d'appel :</strong> modèle demandé → <code>GROQ_MODEL</code> → fallbacks (dédupliqués, ordre gardé). Seule l'erreur <code>model_not_found</code> déclenche le suivant ; 401/429/timeout remontent aussitôt avec un message clair (502 + <code>detail</code>). Le modèle effectivement utilisé est retourné (<code>{response, model}</code>) et affiché dans le header. <code>GET /api/models</code> expose la allow-list (id + label) ; tout autre id → 400.</p>
+<h3>Pipeline RAG en détail</h3>
+<div class="diagram"><div class="mermaid">
+flowchart TB
+  subgraph Ingest["Ingestion (POST /upload_pdf)"]
+    V["Validation : extension .pdf, taille ≤ MAX_PDF_MB"]
+    T["Texte par page (PyPDFLoader)"]
+    S["Scan pypdf : captions Figure/Table/UML (EN+FR) + nb images"]
+    C["Split 1000 car. / overlap 200"]
+    M["Métadonnées : user, pdf, page_num, captions, figures"]
+    E["Embeddings MiniLM (paresseux) → FAISS (remplace l'index user)"]
+    V --> T --> S --> C --> M --> E
+  end
+  subgraph Retr["Recherche (POST /query_rag → /ask)"]
+    L["Chargement index (cache mémoire, invalidation par mtime)"]
+    K["similarity_search k×3 → filtre user → tri score L2 → top_k"]
+    F["Blocs cités : [source — p. N] + figures, 1800 car. max"]
+    P["System prompt : règles + contexte → /ask"]
+    L --> K --> F --> P
+  end
+</div></div>
 
 <h2 id="sec-5">5. Architecture détaillée du frontend</h2>
 <div class="diagram"><div class="mermaid">
@@ -154,6 +209,31 @@ flowchart TB
   H2 --> C3
 </div></div>
 <p>Client API typé (<code>lib/api.ts</code>, <code>ApiError</code> avec le <code>detail</code> backend), helpers purs testés (<code>lib/messages.ts</code>), classes sémantiques de thème (aucune couleur en dur).</p>
+<h3>Arborescence du dossier frontend</h3>
+<pre>frontend/
+├── app/
+│   ├── layout.tsx            # racine : fonts, boot thème, metadata (SANS auth)
+│   ├── icon.svg              # favicon Codenix (servi auto par Next.js)
+│   ├── globals.css           # tokens oklch :root/.dark + classes sémantiques
+│   ├── (marketing)/page.tsx  # landing 100% statique (zéro JS d'auth)
+│   └── (dashboard)/          # groupe AVEC ClerkProvider (code-split auth)
+│       ├── layout.tsx        # frontière auth + force-dynamic (jamais pré-rendu)
+│       ├── dashboard/        # page.tsx (composition) + loading.tsx (skeleton)
+│       └── sign-in/          # &lt;SignIn/&gt; Clerk thémé via appearance
+├── components/chat/          # 13 composants : Header, Sidebar, ChatList,
+│                             # ChatMessage, StreamingText, CodeBlock, ChatInput,
+│                             # ModeSwitch, ModelSwitch, AttachPdfButton,
+│                             # SearchDialog, ConfirmDialog, ChatSkeleton
+├── components/layout/        # Logo (bulle + éclair), ThemeToggle, VersionBadge
+├── hooks/                    # useChat, useConversationHistory,
+│                             # usePdfAttachment, useTheme (tous testés/stables)
+├── lib/                      # config.ts (APP_VERSION, API URL),
+│                             # api.ts (client typé + upload XHR),
+│                             # types.ts (ChatMessage, ChatMode, ModelOption),
+│                             # messages.ts (payload, prompts, titres)
+├── layouts/                  # Header/Footer statiques (landing, sans Clerk)
+├── tests/ + e2e/             # 26 tests Vitest + 6 specs Playwright
+└── scripts/export-report-pdf.mjs  # génère ce PDF (npm run report:pdf)</pre>
 
 <h2 id="sec-6">6. Documentation API (Swagger / OpenAPI)</h2>
 <p>FastAPI expose nativement une documentation interactive, enrichie (titre <em>Codenix API v1.0.0</em>, tags par domaine) :</p>
@@ -379,6 +459,74 @@ flowchart LR
 <tr><td>Tableau admin (quotas, coûts)</td><td>P2</td><td>Avec Prometheus ci-dessus</td></tr>
 </table>
 <p><strong>Conclusion.</strong> Codenix v1.0 livre un socle complet et testé : conversation robuste, RAG cité par pages, UI moderne, CI/CD avec qualité et charge, documentation Swagger intégrée et stratégie de versions. Prochaine étape conseillée : <strong>SSE + Redis (P0)</strong>, puis vision des figures.</p>
+
+<h2 id="sec-16">16. RAG approfondi (niveau entretien)</h2>
+<h3>16.1 C'est quoi le RAG ?</h3>
+<p><strong>R</strong>etrieval-<strong>A</strong>ugmented <strong>G</strong>eneration : au lieu de demander au LLM de répondre « de tête » (risque d'hallucination, ignorance de vos documents privés), on <strong>récupère d'abord</strong> les passages pertinents d'une base, puis on les <strong>injecte dans le prompt</strong>. Le modèle répond en s'appuyant sur du vrai contexte — vérifiable (citations <code>[p. N]</code>).</p>
+<table>
+<tr><th></th><th>RAG (notre choix)</th><th>Fine-tuning</th><th>Prompt seul</th></tr>
+<tr><td>Données privées/récentes</td><td>✅ immédiat (upload → requêtable)</td><td>❌ ré-entraînement coûteux</td><td>❌ copier-coller manuel</td></tr>
+<tr><td>Coût</td><td>Faible (index + requêtes)</td><td>Élevé (GPU, dataset)</td><td>Nul mais non scalable</td></tr>
+<tr><td>Traçabilité</td><td>✅ citations de pages</td><td>❌ boîte noire</td><td>✅ (texte fourni)</td></tr>
+<tr><td>Limite</td><td>Qualité du retrieval</td><td>Rigidité</td><td>Taille du contexte</td></tr>
+</table>
+<h3>16.2 Les 4 étapes dans Codenix (chiffres à connaître)</h3>
+<ol>
+<li><strong>Chunking</strong> : split 1000 caractères / overlap 200. Trop gros → bruit ; trop petit → contexte perdu. L'overlap évite de couper une phrase/figure en deux.</li>
+<li><strong>Embeddings</strong> : <code>all-MiniLM-L6-v2</code> → vecteurs de <strong>384 dimensions</strong>, chargés paresseusement (démarrage rapide).</li>
+<li><strong>Recherche vectorielle</strong> : FAISS (<code>IndexFlatL2</code>, distance euclidienne — plus petit = plus proche), <code>k×3</code> candidats → filtre user → tri score → <code>top_k=4</code>. Index <strong>isolé par utilisateur</strong> + cache mémoire invalidé par mtime.</li>
+<li><strong>Assemblage</strong> : blocs <code>[source — p. N]</code> + captions de figures + plafond 1800 car., injectés en message <code>system</code> avec règles de réponse.</li>
+</ol>
+<h3>16.3 Questions d'entretien RAG (avec réponses modèles)</h3>
+<table>
+<tr><th>Question</th><th>Bonne réponse (courte)</th></tr>
+<tr><td>Pourquoi RAG plutôt que fine-tuning ?</td><td>Données privées/évolutives sans ré-entraînement, coût faible, citations vérifiables. Fine-tune = style/comportement, pas connaissances.</td></tr>
+<tr><td>C'est quoi un embedding ?</td><td>Vecteur dense (ici 384 dims) où la proximité géométrique ≈ similarité sémantique ; deux phrases synonymes ont des vecteurs proches.</td></tr>
+<tr><td>Cosinus vs L2 ?</td><td>Cosinus = angle (insensible à la norme), L2 = distance euclidienne. FAISS FlatL2 ici ; avec vecteurs normalisés, les deux classent pareil.</td></tr>
+<tr><td>Chunk size / overlap : trade-offs ?</td><td>Gros chunks = plus de contexte mais bruit + tokens ; petits = précis mais fragmentés. Overlap 200 préserve les frontières. On tune par eval (fidélité des citations).</td></tr>
+<tr><td>Top-k trop grand/petit ?</td><td>Trop petit = réponse incomplète ; trop grand = bruit + coût tokens + dilution de l'attention (« lost in the middle »).</td></tr>
+<tr><td>Comment gérez-vous les figures/UML ?</td><td>Captions détectées (regex EN/FR) + compteur d'images par page en métadonnées ; le prompt ordonne de nommer et détailler chaque figure. Limite honnête : pas de vision — le modèle ne « voit » pas l'image.</td></tr>
+<tr><td>Isolation multi-tenant ?</td><td>Un index FAISS par <code>user_id</code> + filtre <code>user_id</code> à la requête : aucun chunk d'un autre user ne peut remonter.</td></tr>
+<tr><td>Échecs typiques du RAG ?</td><td>Mauvais chunking, k mal réglé, requête vague (→ reformulation), contexte contradictoire (→ instruction de priorité), figures purement visuelles.</td></tr>
+</table>
+
+<h2 id="sec-17">17. LLM &amp; Groq approfondis (niveau entretien)</h2>
+<h3>17.1 Fondamentaux à maîtriser</h3>
+<ul>
+<li><strong>Tokens</strong> : unités de texte (~4 caractères/token en anglais). Tout se facture/compte en tokens : prompt + raisonnement + réponse.</li>
+<li><strong>Fenêtre de contexte</strong> : 131k tokens ici — borne la taille historique + RAG injectable (d'où le cap 50 messages et 1800 car./bloc).</li>
+<li><strong>Modèles de raisonnement</strong> (GPT-OSS) : ils « réfléchissent » en tokens <em>avant</em> de répondre → d'où <code>GROQ_MAX_TOKENS=4096</code> (1024 tronquait). Le fallback ne se déclenche que sur <code>model_not_found</code>, pas sur les 429.</li>
+<li><strong>Rôles</strong> : <code>system</code> (règles, non négociable), <code>user</code>, <code>assistant</code>. Notre system = règles maison + contexte RAG (+ instruction Agent).</li>
+<li><strong>Groq/LPU</strong> : puces d'inférence déterministes ultra-rapides (vs GPU généralistes) → latence sub-seconde, quotas stricts (429).</li>
+<li><strong>Hallucinations</strong> : mitigées par RAG + citations exigées + sanitize (jamais de bulle d'erreur renvoyée au modèle).</li>
+<li><strong>AsyncGroq partagé</strong> : 1000 chats concurrents multiplexés sur l'event loop au lieu de 40 threads (leçon du test de charge).</li>
+</ul>
+<h3>17.2 Questions d'entretien LLM (avec réponses modèles)</h3>
+<table>
+<tr><th>Question</th><th>Bonne réponse (courte)</th></tr>
+<tr><td>Temperature / top-p, ça change quoi ?</td><td>Contrôlent l'aléatoire : bas (≈0) = factuel/déterministe (idéal RAG), haut = créatif. Nous : défaut provider ; piste = baisser pour le factuel.</td></tr>
+<tr><td>Pourquoi un modèle « décommissionné » a tout cassé ?</td><td>ID en dur → 404 <code>model_not_found</code> → 500. Leçon : modèle configurable + fallback + 502 avec cause, jamais d'ID en dur.</td></tr>
+<tr><td>Comment limitez-vous les coûts/latence ?</td><td>Historique capé, blocs capés, top-k petit, quota via rate-limit (Redis prévu), infra-test sans IA, quota Groq monitoré (429).</td></tr>
+<tr><td>Sync vs async pour les appels LLM ?</td><td>Sync bloque un thread (~40 dispos) ; async multiplexe des milliers d'appels : indispensable sous charge.</td></tr>
+<tr><td>Prompt injection — vous gérez ?</td><td>Partiellement : sanitize (vide/placeholders), rôles validés, RAG prioritaire par instruction. Reste : garde-fous (Llama Guard prévu).</td></tr>
+<tr><td>Évaluer la qualité des réponses ?</td><td>Aujourd'hui : citations vérifiables + tests. Prévu : votes 👍👎, fidélité (faithfulness) vs sources, jeux d'éval.</td></tr>
+</table>
+
+<h2 id="sec-18">18. Fiche d'entretien express (Q/R tous sujets)</h2>
+<table>
+<tr><th>Question piège</th><th>Réponse en 2 phrases</th></tr>
+<tr><td>500 sur <code>/ask</code> au début ?</td><td>Modèle en dur décommissionné → 404 provider. Fix : modèle configurable + fallback + 502 avec <code>detail</code>.</td></tr>
+<tr><td>Historique « empoisonné » ?</td><td>La bulle d'erreur était renvoyée au modèle. Fix : bulles UI-only, strip avant envoi/persistance, des deux côtés.</td></tr>
+<tr><td>Flood <code>store_user</code> au login ?</td><td>Objet profil recréé à chaque render → effect relancé. Fix : dépendances primitives + <code>useMemo</code> → 1×1 requêtes.</td></tr>
+<tr><td>Crash hydration Next.js ?</td><td><code>localStorage</code> lu au premier render ≠ SSR. Fix : defaults au premier render, adoption post-hydratation + script de boot.</td></tr>
+<tr><td>Worker mort à 1000 users (<code>select()</code>) ?</td><td>Cap Windows 512 FD/processus. Fix : workers + <code>limit-concurrency</code> (503 honnêtes) + pool Mongo 50 ; prod = Linux.</td></tr>
+<tr><td>Pourquoi pas de middleware Clerk ?</td><td>Il ne protégeait rien (gardes client) et coûtait un passage Edge par requête. Auth code-splittée par groupes de routes.</td></tr>
+<tr><td>Clerk alourdit la landing ?</td><td>Provider déplacé dans le groupe dashboard : landing 108 kB, zéro JS d'auth, page serveur statique.</td></tr>
+<tr><td>CI verte, c'est quoi ?</td><td>pytest 30 + Vitest 26 + Playwright + <code>next build</code> + Sonar (service éphémère) + Locust 10k en artefacts.</td></tr>
+<tr><td>PDF + question ensemble, comment ?</td><td>Chip d'attente → upload XHR 0–100&nbsp;% au send → <code>query_rag</code> immédiat → <code>/ask</code> avec contexte.</td></tr>
+<tr><td>Modèle commutable, garde-fous ?</td><td>Allow-list <code>/api/models</code>, 400 sinon, fallback auto, modèle utilisé retourné et affiché.</td></tr>
+</table>
+<p><strong>Conseil dernier jour :</strong> pour chaque réponse, cite le fichier (<code>ai_service.py</code>, <code>useChat.ts</code>…), le chiffre (50 messages, top_k=4, 4096 tokens, 512 FD) et l'incident vécu — c'est ce qui transforme un entretien théorique en preuve d'expérience.</p>
 
 </body>
 </html>

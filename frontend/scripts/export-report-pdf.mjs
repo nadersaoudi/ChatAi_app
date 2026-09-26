@@ -14,7 +14,7 @@ const browser = await chromium.launch();
 const page = await browser.newPage();
 await page.goto("file:///" + html.replace(/\\/g, "/"));
 await page.waitForFunction(
-  () => document.querySelectorAll('.mermaid[data-processed="true"]').length >= 9,
+  () => document.querySelectorAll('.mermaid[data-processed="true"]').length >= 10,
   null,
   { timeout: 90000 }
 );

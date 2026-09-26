@@ -201,3 +201,9 @@ Ramp gradually (`-r 25`, watch worker logs) instead of jumping straight to
 - `429` in 502 detail → Groq rate limit; wait and retry.
 - First PDF upload/query is slow → one-time embedding-model download; later
   calls reuse the local cache.
+- **Upload kills the service on small instances (OOM)** → first RAG use loads
+  torch + transformers + the embedding model (RAM spike). Render dashboard →
+  Metrics → Memory pegged at the limit, or logs with `Out of memory` / exit
+  137 / restart loop = OOM confirmed. Fix: bigger instance (Standard 2GB+),
+  or keep chat-only on small RAM. `GET /` noise (`404`) from port scanners
+  is benign — the root route now answers service info.
