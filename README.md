@@ -135,6 +135,46 @@ locust -f loadtest/locustfile.py --host http://localhost:8000 \
 # open results/report.html for charts + percentiles
 ```
 
+## Deploy (frontend → Vercel, backend → Render)
+
+Vercel is serverless: it fits the Next.js frontend, **not** the FastAPI
+backend (uvicorn + FAISS needs a long-running server with disk).
+
+### 1) Backend on Render
+
+**Easiest (recommended): Blueprint** — Render → New → **Blueprint** →
+select this repo → fill `GROQ_API_KEY`, `MONGO_URI`, `CORS_ORIGINS`
+(your Vercel URL) when asked. Everything else (build/start commands,
+`${PORT:-8000}` fallback so a missing `PORT` can never crash boot, disk,
+health check) comes from `render.yaml`.
+
+Manual alternative: New → **Web Service** (not Static Site — static sites
+have no `$PORT`, which causes `Option '--port' requires an argument`).
+Root Directory: `backend`, Build: `pip install -r requirements.txt`,
+Start: `cd backend && uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}`
+(Render injects `$PORT` for Web Services; the `:-8000` is belt and braces).
+
+Then: add a **Disk** (`/var/data`) + `FAISS_INDEX_PATH=/var/data`, Atlas →
+allow Render egress, note your service URL for step 2.
+
+⚠️ Render free tier (512MB) may OOM loading `sentence-transformers`, and it
+sleeps when idle. For reliable RAG use Starter ($7+) or Railway/Fly.io.
+
+### 2) Frontend on Vercel
+
+1. Vercel → Add New → Project → import this repo.
+   - Root Directory: `frontend` (Framework preset: Next.js, defaults fine).
+2. Environment Variables (before deploy — `NEXT_PUBLIC_*` is baked at build):
+   `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`,
+   `NEXT_PUBLIC_API_URL=https://codenix-api.onrender.com` (your backend URL).
+3. Deploy. Changing the backend URL later = change the variable + redeploy.
+
+### 3) Clerk production wiring (required, else auth fails live)
+
+Clerk dashboard → add `YOUR-APP.vercel.app` to Domains + redirect URLs
+(sign-in already redirects to `/dashboard` in code). Use production Clerk
+keys for real traffic; test keys are fine for previews.
+
 ## Troubleshooting
 
 | Symptom | Likely cause / fix |

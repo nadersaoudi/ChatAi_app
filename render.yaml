@@ -1,0 +1,36 @@
+# Codenix API on Render — one-click Blueprint.
+# Render Dashboard → New → Blueprint → select this repo.
+# Secrets (GROQ_API_KEY, MONGO_URI, CORS_ORIGINS) are asked at deploy time.
+# Note: Starter plan is required for the persistent disk (FAISS indexes)
+# and the RAM headroom sentence-transformers needs. Free tier sleeps and
+# loses uploads; switch plan in the dashboard if you accept that.
+services:
+  - type: web
+    name: codenix-api
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r backend/requirements.txt
+    # ${PORT:-8000}: never fails, even if PORT is unset.
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+    healthCheckPath: /health
+    disk:
+      name: faiss-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
+      - key: GROQ_FALLBACK_MODELS
+        value: llama-3.1-8b-instant,meta-llama/llama-4-scout-17b-16e-instruct,qwen/qwen3-32b,openai/gpt-oss-120b
+      - key: GROQ_MAX_TOKENS
+        value: 4096
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB_NAME
+        value: chatai_app
+      - key: FAISS_INDEX_PATH
+        value: /var/data
+      - key: CORS_ORIGINS
+        sync: false
