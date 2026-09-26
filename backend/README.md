@@ -207,3 +207,10 @@ Ramp gradually (`-r 25`, watch worker logs) instead of jumping straight to
   137 / restart loop = OOM confirmed. Fix: bigger instance (Standard 2GB+),
   or keep chat-only on small RAM. `GET /` noise (`404`) from port scanners
   is benign — the root route now answers service info.
+- **Browser shows a CORS error only on PDF upload (other calls pass)** →
+  almost never real CORS: the request dies server-side (OOM above, or a
+  proxy timeout on a slow first upload) and the browser mislabels the dead
+  connection. Triage: retry with a 1-page PDF (size issue?), retry a second
+  time (model-download stall — the Docker image pre-bakes the model to kill
+  this), then check Metrics/logs. Real CORS misconfig would break *every*
+  endpoint, not just upload.
