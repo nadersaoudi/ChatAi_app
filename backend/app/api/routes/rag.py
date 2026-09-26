@@ -8,7 +8,7 @@ from app.schemas.rag import PdfUploadResponse, RagQueryResponse
 from app.services import rag_service
 
 logger = get_logger(__name__)
-router = APIRouter()
+router = APIRouter(tags=["rag"])
 
 
 @router.post("/api/upload_pdf", response_model=PdfUploadResponse)

@@ -9,7 +9,7 @@ from app.services import ai_service
 from app.core.config import settings
 
 logger = get_logger(__name__)
-router = APIRouter()
+router = APIRouter(tags=["chat"])
 
 
 @router.get("/api/models", response_model=ModelListResponse)

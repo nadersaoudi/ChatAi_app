@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Rapport de projet — Codenix</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });</script>
+<style>
+  body { font-family: "Segoe UI", Arial, Helvetica, sans-serif; color: #1a1a1a; line-height: 1.55; font-size: 11pt; }
+  h1 { text-align: center; font-size: 26pt; margin-bottom: 0; }
+  .subtitle { text-align: center; color: #555; font-size: 13pt; margin-top: 4px; }
+  .meta { text-align: center; color: #666; font-size: 10pt; margin-bottom: 30px; }
+  h2 { font-size: 16pt; color: #0b3d5c; border-bottom: 2px solid #0b3d5c; padding-bottom: 4px; margin-top: 34px; }
+  h3 { font-size: 12.5pt; color: #14567d; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 10pt; }
+  th, td { border: 1px solid #999; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #e8f1f7; }
+  code { font-family: Consolas, monospace; font-size: 9.5pt; background: #f2f2f2; padding: 1px 4px; border-radius: 3px; }
+  pre { background: #f5f5f5; border: 1px solid #ccc; border-radius: 6px; padding: 10px; font-size: 9pt; overflow-x: auto; }
+  .diagram { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 12px 0; }
+  ul, ol { margin: 6px 0; }
+  li { margin-bottom: 3px; }
+  .cover-logo { text-align: center; font-size: 60pt; margin: 30px 0 0; }
+  .toc ol { font-size: 11pt; }
+  .toc li { margin-bottom: 4px; }
+  .toc a { color: #0b3d5c; text-decoration: none; }
+  @media print {
+    h2 { break-before: page; }
+    h2.first-section { break-before: auto; }
+    .diagram, table, pre { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<div class="cover-logo">⚡</div>
+<h1>Codenix — Assistant IA conversationnel</h1>
+<p class="subtitle">Rapport technique complet du projet</p>
+<p class="meta">Version 1.0 — Septembre 2026 — Rédigé en français<br>Chat IA (Groq) + Q&amp;A sur PDF (RAG) + historique persistant + CI/CD</p>
+
+<h2 class="first-section">Sommaire</h2>
+<div class="toc"><ol>
+<li><a href="#sec-1">Présentation générale</a></li>
+<li><a href="#sec-2">Technologies utilisées</a></li>
+<li><a href="#sec-3">Architecture globale</a></li>
+<li><a href="#sec-4">Architecture détaillée du backend</a></li>
+<li><a href="#sec-5">Architecture détaillée du frontend</a></li>
+<li><a href="#sec-6">Documentation API (Swagger / OpenAPI)</a></li>
+<li><a href="#sec-7">Diagramme de cas d'utilisation</a></li>
+<li><a href="#sec-8">Diagramme de classes (domaine)</a></li>
+<li><a href="#sec-9">Diagrammes de séquence</a></li>
+<li><a href="#sec-10">Base de données (MongoDB + FAISS)</a></li>
+<li><a href="#sec-11">DevOps (CI/CD, qualité, charge)</a></li>
+<li><a href="#sec-12">Déploiement</a></li>
+<li><a href="#sec-13">Stratégie de versions et montée de version</a></li>
+<li><a href="#sec-14">Technologies à adopter</a></li>
+<li><a href="#sec-15">Roadmap des fonctionnalités + Conclusion</a></li>
+</ol></div>
+
+<h2 id="sec-1">1. Présentation générale</h2>
+<p><strong>Codenix</strong> est une application web full-stack : frontend <strong>Next.js</strong>, backend <strong>FastAPI</strong>. Un utilisateur authentifié (Clerk) dialogue avec un modèle d'IA (Groq), peut joindre un <strong>PDF à son message</strong> pour des réponses fondées sur le document (RAG), et retrouve son <strong>historique</strong> persisté.</p>
+<h3>Fonctionnalités principales</h3>
+<ul>
+<li>Chat temps réel (typewriter), Markdown riche, coloration syntaxique + copie.</li>
+<li>Envoi combiné <em>PDF + message</em> avec progression 0–100&nbsp;%.</li>
+<li>Modes <strong>Ask / Agent</strong>, sélecteur de modèle, palette <kbd>Ctrl+K</kbd>.</li>
+<li>Thèmes sombre/clair, sidebar redimensionnable, suppression avec confirmation.</li>
+</ul>
+
+<h2 id="sec-2">2. Technologies utilisées</h2>
+<table>
+<tr><th>Couche</th><th>Technologie</th><th>Version</th><th>Rôle</th></tr>
+<tr><td>Frontend</td><td>Next.js (App Router)</td><td>15.5.26</td><td>SSR/SSG, routage, groupes de routes</td></tr>
+<tr><td>Frontend</td><td>React + TypeScript</td><td>19 / 5</td><td>UI, typage strict</td></tr>
+<tr><td>Frontend</td><td>Tailwind CSS</td><td>4 (tokens oklch)</td><td>Thème sombre/clair</td></tr>
+<tr><td>Frontend</td><td>Clerk</td><td>6.24</td><td>Auth (groupe dashboard uniquement)</td></tr>
+<tr><td>Frontend</td><td>PrismLight</td><td>15.6.1</td><td>Code (14 langages)</td></tr>
+<tr><td>Backend</td><td>FastAPI + Uvicorn</td><td>0.141.1 / 0.54.0</td><td>API REST asynchrone + Swagger</td></tr>
+<tr><td>Backend</td><td>Pydantic</td><td>2.13.5</td><td>Validation (400/422)</td></tr>
+<tr><td>IA</td><td>Groq (AsyncGroq)</td><td>1.7.0</td><td>Completions + fallback multi-modèles</td></tr>
+<tr><td>Base</td><td>MongoDB (PyMongo)</td><td>4.18.2 / 7</td><td>Users + conversations (Atlas ou Docker)</td></tr>
+<tr><td>RAG</td><td>FAISS + MiniLM + LangChain</td><td>1.15.1 / 6.1.0 / 1.4.2</td><td>Index vectoriel par utilisateur</td></tr>
+<tr><td>PDF</td><td>pypdf</td><td>6.19.0</td><td>Texte, pages, figures, captions</td></tr>
+<tr><td>Tests</td><td>pytest / Vitest / Playwright / Locust</td><td>9.1.1 / 4 / 1.63</td><td>30 + 26 + 6 tests, charge 10k</td></tr>
+<tr><td>DevOps</td><td>GitHub Actions, SonarQube, Docker, Dependabot</td><td>—</td><td>CI, qualité, versions</td></tr>
+<tr><td>Déploiement</td><td>Vercel (front) + Render (back)</td><td>—</td><td>Serverless + serveur persistant</td></tr>
+</table>
+
+<h2 id="sec-3">3. Architecture globale</h2>
+<div class="diagram"><div class="mermaid">
+flowchart TB
+  subgraph Client["Navigateur"]
+    UI["Next.js : landing, dashboard\ncomposer, sidebar, dialogs"]
+  end
+  subgraph Front["Frontend (Vercel)"]
+    UI
+  end
+  subgraph Back["Backend FastAPI (Render)"]
+    Routes["Routes : chat, conversations, rag, health"]
+    Services["Services : ai_service\nmongo_service, rag_service"]
+    Routes --> Services
+  end
+  subgraph Data["Données"]
+    Mongo[("MongoDB\nusers, conversations")]
+    FAISS[("FAISS par utilisateur\nchunks + pages + captions")]
+  end
+  subgraph Ext["Externes"]
+    Groq["Groq API\nchat completions"]
+    Clerk["Clerk\nsession, user.id"]
+  end
+  UI -- "REST/JSON (fetch, XHR upload)" --> Routes
+  Services --> Groq
+  Services --> Mongo
+  Services --> FAISS
+  UI -- "session" --> Clerk
+</div></div>
+
+<h2 id="sec-4">4. Architecture détaillée du backend</h2>
+<div class="diagram"><div class="mermaid">
+flowchart TB
+  Client["Client (navigateur)"]
+  MW["Middlewares\nCORS + GZip + lifespan (index)"]
+  Routes["api/routes/\nchat · conversations · rag · health"]
+  Schemas["schemas/ (Pydantic)\nChatRequest, ConversationIn…\n→ 400/422 automatiques"]
+  Services["services/\nai_service : AsyncGroq + fallback + sanitize\nmongo_service : pool 50, ping 30s, index\nrag_service : FAISS + cache mtime"]
+  Prov["Groq · MongoDB · FAISS disque"]
+  Client --> MW --> Routes --> Schemas --> Services --> Prov
+</div></div>
+<p><code>main.py</code> ne contient que la fabrique (CORS, GZip, lifespan). Les routes sont fines, les schémas valident, les services portent le métier. Erreurs mappées : 503 (dépendances), 502 (provider avec cause), 500 (filet).</p>
+
+<h2 id="sec-5">5. Architecture détaillée du frontend</h2>
+<div class="diagram"><div class="mermaid">
+flowchart TB
+  subgraph RG["Groupes de routes"]
+    M["(marketing)/page\nstatique, sans auth"]
+    DL["(dashboard)/layout\nClerkProvider + force-dynamic"]
+    Dash["dashboard/page\ncomposition"]
+    Sign["sign-in"]
+  end
+  subgraph HK["Hooks (état)"]
+    H1["useChat\n+ reveal typewriter"]
+    H2["useConversationHistory\n+ loading"]
+    H3["usePdfAttachment\n+ progression XHR"]
+    H4["useTheme"]
+  end
+  subgraph CP["Composants"]
+    C1["ChatList, ChatMessage\nStreamingText, CodeBlock"]
+    C2["ChatInput + ModeSwitch\nModelSwitch, AttachPdfButton"]
+    C3["Sidebar, SearchDialog\nConfirmDialog, Skeletons"]
+  end
+  DL --> Dash & Sign
+  Dash --> H1 & H2 & H3 & H4
+  H1 --> C1 & C2
+  H2 --> C3
+</div></div>
+<p>Client API typé (<code>lib/api.ts</code>, <code>ApiError</code> avec le <code>detail</code> backend), helpers purs testés (<code>lib/messages.ts</code>), classes sémantiques de thème (aucune couleur en dur).</p>
+
+<h2 id="sec-6">6. Documentation API (Swagger / OpenAPI)</h2>
+<p>FastAPI expose nativement une documentation interactive, enrichie (titre <em>Codenix API v1.0.0</em>, tags par domaine) :</p>
+<ul>
+<li><code>GET /docs</code> — Swagger UI : essayer chaque endpoint depuis le navigateur.</li>
+<li><code>GET /redoc</code> — variante ReDoc, lecture seule.</li>
+<li><code>GET /openapi.json</code> — schéma machine (11 paths) pour générer des clients.</li>
+</ul>
+<table>
+<tr><th>Tag</th><th>Endpoints couverts</th></tr>
+<tr><td>chat</td><td><code>/ask</code>, <code>/api/models</code></td></tr>
+<tr><td>conversations</td><td>store_user, save/get/delete_conversation</td></tr>
+<tr><td>rag</td><td>upload_pdf, query_rag, list_chunks, vector_health</td></tr>
+<tr><td>health</td><td><code>/health</code></td></tr>
+</table>
+
+<h2 id="sec-7">7. Diagramme de cas d'utilisation</h2>
+<div class="diagram"><div class="mermaid">
+flowchart LR
+  User((Utilisateur))
+  Admin((Administrateur))
+  subgraph Systeme["Codenix"]
+    UC1([S'inscrire / se connecter])
+    UC2([Discuter avec l'IA])
+    UC3([Joindre un PDF au message])
+    UC4([Choisir le mode Ask/Agent])
+    UC5([Changer de modèle])
+    UC6([Consulter l'historique])
+    UC7([Rechercher Ctrl+K])
+    UC8([Supprimer une conversation])
+    UC9([Changer de thème])
+  end
+  User --> UC1 & UC2 & UC3 & UC4 & UC5 & UC6 & UC7 & UC8 & UC9
+  UC3 -.->|"inclut"| UC2
+  UC5 -.->|"inclut"| UC2
+  Admin --> UC9
+</div></div>
+<table>
+<tr><th>Acteur</th><th>Cas</th><th>Description</th></tr>
+<tr><td>Utilisateur</td><td>Discuter</td><td>Message → réponse animée, formatée, persistée</td></tr>
+<tr><td>Utilisateur</td><td>PDF + message</td><td>Chip d'attente, upload 0–100&nbsp;%, réponse fondée sur le document</td></tr>
+<tr><td>Utilisateur</td><td>Modes / modèle</td><td>Style Ask ou Agent, modèle commutable avec fallback</td></tr>
+<tr><td>Utilisateur</td><td>Historique</td><td>Liste, recherche, suppression confirmée</td></tr>
+<tr><td>Administrateur</td><td>Superviser</td><td>/health, logs, Sonar, Locust, versions</td></tr>
+</table>
+
+<h2 id="sec-8">8. Diagramme de classes (domaine)</h2>
+<div class="diagram"><div class="mermaid">
+classDiagram
+  class User {
+    +user_id: str
+    +email: str
+    +name: str
+  }
+  class Conversation {
+    +conversation_id: str
+    +title: str
+    +messages: ChatMessage[]
+    +timestamp: int
+  }
+  class ChatMessage {
+    +role: user|assistant|system
+    +content: str
+    +error?: bool
+  }
+  class PdfChunk {
+    +pdf_id: str
+    +page_num: int
+    +captions: str[]
+    +figures: int
+    +text: str
+  }
+  class AiService {
+    +complete(messages, model?) : (reply, model)
+    +sanitize(messages)
+    +available_models()
+  }
+  class RagService {
+    +ingest_pdf(bytes, name, user)
+    +query(user, question) : cited blocks
+  }
+  class MongoService {
+    +users()
+    +conversations()
+    +ensure_indexes()
+  }
+  User "1" --> "*" Conversation : possède
+  Conversation "1" --> "*" ChatMessage : contient
+  RagService --> "*" PdfChunk : indexe
+  AiService ..> ChatMessage : consomme
+</div></div>
+
+<h2 id="sec-9">9. Diagrammes de séquence</h2>
+<h3>9.1 Envoi d'un message simple</h3>
+<div class="diagram"><div class="mermaid">
+sequenceDiagram
+  actor U as Utilisateur
+  participant F as Frontend (useChat)
+  participant API as FastAPI /ask
+  participant G as Groq
+  participant M as MongoDB
+  U->>F: Texte + Entrée
+  F->>API: POST {messages filtrés, model?}
+  API->>API: sanitize (bulles ❌ exclues)
+  API->>G: chat.completions (demandé → fallback)
+  G-->>API: réponse + modèle utilisé
+  API-->>F: {response, model}
+  F->>F: Révélation typewriter
+  F->>API: POST /save_conversation (historique propre)
+  API->>M: upsert
+</div></div>
+<h3>9.2 Message avec PDF (RAG)</h3>
+<div class="diagram"><div class="mermaid">
+sequenceDiagram
+  actor U as Utilisateur
+  participant F as Frontend
+  participant API as FastAPI
+  participant V as FAISS (user)
+  U->>F: Sélection PDF (chip, pas d'upload)
+  U->>F: Message + Envoyer
+  F->>API: POST /upload_pdf (XHR, anneau 0–100%)
+  API->>V: chunks + pages + captions (remplace l'index)
+  F->>API: POST /query_rag {question}
+  API->>V: similarity search → blocs [doc — p. N]
+  F->>API: POST /ask {system + contexte + historique}
+</div></div>
+<h3>9.3 Connexion et historique</h3>
+<div class="diagram"><div class="mermaid">
+sequenceDiagram
+  actor U as Utilisateur
+  participant C as Clerk
+  participant F as Frontend
+  participant API as FastAPI
+  U->>C: Sign-in
+  C-->>F: user.id
+  F->>API: POST /store_user (1×, deps stables)
+  F->>API: GET /get_conversations (1×, skeletons)
+  API-->>F: conversations triées
+</div></div>
+
+<h2 id="sec-10">10. Base de données (MongoDB + FAISS)</h2>
+<table>
+<tr><th>Collection</th><th>Champs</th><th>Index</th></tr>
+<tr><td><code>users</code></td><td>user_id, email, name</td><td>user_id unique</td></tr>
+<tr><td><code>conversations</code></td><td>user_id, conversation_id, title, messages[], timestamp</td><td>(user_id, timestamp ↓)</td></tr>
+</table>
+<p>FAISS sur disque, isolé par utilisateur, cache mémoire invalidé par mtime. MongoDB : Atlas ou conteneur Docker (<code>docker compose up</code>).</p>
+
+<h2 id="sec-11">11. DevOps (CI/CD, qualité, charge)</h2>
+<div class="diagram"><div class="mermaid">
+flowchart LR
+  Push["push / PR"] --> BE["backend:\npip → pytest (30)"]
+  Push --> FE["frontend:\nnpm ci → tsc → lint → vitest (26) → build"]
+  BE --> Sonar["SonarQube\n(service éphémère CI)"]
+  FE --> Sonar
+  BE --> Load["Locust 10k users\nHTML + CSV en artefacts"]
+</div></div>
+<ul>
+<li><strong>CI GitHub Actions</strong> + <strong>Dependabot</strong> hebdomadaire (npm + pip, CI verte exigée).</li>
+<li><strong>Tests</strong> : 30 pytest (mockés), 26 Vitest, 6 Playwright, Locust tags <code>ai</code>/<code>infra</code>.</li>
+<li><strong>Contraintes apprises</strong> : plafond Windows <code>select()</code> 512 FD (workers + limit-concurrency), quota Groq (runs <code>--exclude-tags ai</code>).</li>
+</ul>
+
+<h2 id="sec-12">12. Déploiement</h2>
+<div class="diagram"><div class="mermaid">
+flowchart LR
+  GH[(GitHub)] --> Vercel["Vercel\nfrontend/ (Next.js)"]
+  GH --> Render["Render Blueprint\nbackend (uvicorn + disque)"]
+  Render --> Atlas[("MongoDB Atlas")]
+  Vercel -- "NEXT_PUBLIC_API_URL" --> Render
+  Render -- "CORS_ORIGINS" --> Vercel
+</div></div>
+<table>
+<tr><th>Cible</th><th>Procédure</th><th>Variables</th></tr>
+<tr><td>Backend (Render)</td><td>New → Blueprint (<code>render.yaml</code> : build, <code>${PORT:-8000}</code>, disque <code>/var/data</code>, <code>/health</code>)</td><td>GROQ_API_KEY, MONGO_URI, CORS_ORIGINS, FAISS_INDEX_PATH=/var/data</td></tr>
+<tr><td>Frontend (Vercel)</td><td>Import, Root Directory <code>frontend</code>, Output vide (jamais <code>public</code>), Next ≥ 15.5.26</td><td>Clés Clerk ×2, NEXT_PUBLIC_API_URL</td></tr>
+<tr><td>Clerk</td><td>Domaine Vercel + redirections (/dashboard)</td><td>—</td></tr>
+<tr><td>Local/Docker</td><td><code>docker compose up --build</code> (Mongo inclus)</td><td>backend/.env</td></tr>
+</table>
+
+<h2 id="sec-13">13. Stratégie de versions et montée de version</h2>
+<p><strong>SemVer strict</strong> (<code>MAJEURE.MINEURE.PATCH</code>) : <code>APP_VERSION</code> (frontend) et <code>version</code> FastAPI avancent ensemble ; tout changement visible = entrée <em>Changelog</em> (format Keep a Changelog : Added/Changed/Fixed).</p>
+<h3>Processus de montée de version des dépendances</h3>
+<ol>
+<li><strong>Audit</strong> : <code>npm outdated</code> / <code>pip list --outdated</code> + <code>npm audit</code> ; Dependabot ouvre déjà les PRs chaque lundi (npm + pip, max 5, CI exigée).</li>
+<li><strong>Branche dédiée</strong> <code>chore/upgrade-xxx</code> : une famille à la fois (jamais framework + libs ensemble).</li>
+<li><strong>Verrous</strong> : <code>package-lock.json</code> et versions <code>requirements.txt</code> committés ; pas de <code>latest</code> flottant (leçon : Next 15.3.5 → 15.5.26 épinglé).</li>
+<li><strong>Validation</strong> : tests (pytest + Vitest + Playwright), <code>next build</code> local, revue Swagger (<code>/docs</code>), déploiement staging si risque.</li>
+<li><strong>Montées planifiées</strong> :</li>
+</ol>
+<table>
+<tr><th>Dépendance</th><th>Actuel → Cible</th><th>Motif</th></tr>
+<tr><td>Next.js</td><td>15.5.26 → 16 (évaluer)</td><td> breaking : tester Turbopack + cache</td></tr>
+<tr><td>langchain-community</td><td>0.4.2 → packages standalone</td><td>Paquet en fin de vie (warning au boot)</td></tr>
+<tr><td>Node.js</td><td>20 → 22 LTS</td><td>Aligner CI + runtime</td></tr>
+<tr><td>React</td><td>19 (à jour)</td><td>Surveillance mineurs</td></tr>
+<tr><td>torch / sentence-transformers</td><td>Épinglés, maj trimestrielle</td><td>Éviter les régressions d'embeddings</td></tr>
+</table>
+
+<h2 id="sec-14">14. Technologies à adopter (recommandées)</h2>
+<table>
+<tr><th>Technologie</th><th>Usage</th><th>Priorité</th></tr>
+<tr><td>Redis</td><td>Cache des chunks RAG + rate-limit par utilisateur (protège le quota Groq)</td><td>P0</td></tr>
+<tr><td>SSE (Server-Sent Events)</td><td>Streaming temps réel des réponses au lieu du typewriter simulé</td><td>P0</td></tr>
+<tr><td>Sentry (front + back)</td><td>Remontée d'erreurs production avec contexte</td><td>P0</td></tr>
+<tr><td>S3 / MinIO</td><td>Stockage des PDF (multi-instances, au lieu du disque local)</td><td>P1</td></tr>
+<tr><td>Atlas Search / Meilisearch</td><td>Recherche plein texte + hybride (BM25 + vecteurs) dans l'historique</td><td>P1</td></tr>
+<tr><td>next-intl</td><td>Internationalisation FR/AR officielle</td><td>P1</td></tr>
+<tr><td>PWA (manifest + service worker)</td><td>Installation mobile, icône, mode offline partiel</td><td>P2</td></tr>
+<tr><td>Prometheus + Grafana</td><td>Métriques (latence /ask, 502/429, FD) et alertes</td><td>P2</td></tr>
+<tr><td>Husky + pre-commit</td><td>Lint/tests avant chaque commit (même garde-fous qu'en CI)</td><td>P2</td></tr>
+</table>
+
+<h2 id="sec-15">15. Roadmap des fonctionnalités + Conclusion</h2>
+<table>
+<tr><th>Fonctionnalité</th><th>Priorité</th><th>Notes</th></tr>
+<tr><td>Upload multi-PDF simultanés</td><td>P0</td><td>L'index actuel est remplacé à chaque upload</td></tr>
+<tr><td>Vision LLM des figures UML</td><td>P0</td><td>Nécessite une clé avec modèle vision (Llama 4 Scout)</td></tr>
+<tr><td>Partage de conversation (lien) + export PDF/Markdown</td><td>P1</td><td>Token de partage, rendu existant réutilisable</td></tr>
+<tr><td>Dossiers / tags + recherche plein texte</td><td>P1</td><td>Avec Atlas Search ci-dessus</td></tr>
+<tr><td>Votes 👍👎 + analytics d'usage</td><td>P1</td><td>Boucle qualité des réponses</td></tr>
+<tr><td>Entrée vocale (Whisper)</td><td>P2</td><td>Groq héberge whisper-large-v3</td></tr>
+<tr><td>Tableau admin (quotas, coûts)</td><td>P2</td><td>Avec Prometheus ci-dessus</td></tr>
+</table>
+<p><strong>Conclusion.</strong> Codenix v1.0 livre un socle complet et testé : conversation robuste, RAG cité par pages, UI moderne, CI/CD avec qualité et charge, documentation Swagger intégrée et stratégie de versions. Prochaine étape conseillée : <strong>SSE + Redis (P0)</strong>, puis vision des figures.</p>
+
+</body>
+</html>

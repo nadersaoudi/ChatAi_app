@@ -6,7 +6,7 @@ from app.api.deps import handle_service_errors
 from app.schemas.conversations import ConversationDeleteIn, ConversationIn, UserIn
 from app.services import mongo_service
 
-router = APIRouter()
+router = APIRouter(tags=["conversations"])
 
 
 @router.post("/api/store_user")

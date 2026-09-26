@@ -9,7 +9,7 @@ services:
     name: codenix-api
     runtime: python
     plan: starter
-    buildCommand: pip install -r backend/requirements.txt
+    buildCommand: pip install --root-user-action=ignore -r backend/requirements.txt
     # ${PORT:-8000}: never fails, even if PORT is unset.
     startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
     healthCheckPath: /health

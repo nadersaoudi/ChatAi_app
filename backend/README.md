@@ -34,6 +34,10 @@ pip install -r requirements.txt
 uvicorn main:app --reload   # http://localhost:8000, docs at /docs
 ```
 
+Interactive API docs (Swagger UI at `/docs`, ReDoc at `/redoc`,
+machine schema at `/openapi.json` — 11 paths, tags: chat, conversations,
+rag, health; title `Codenix API v1.0.0`).
+
 ## Testing
 
 ```bash

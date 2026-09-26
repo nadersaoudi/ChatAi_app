@@ -1,6 +1,9 @@
 # Codenix backend — production-ish image ( slim, no dev deps ).
 FROM python:3.13-slim
 
+# Silence pip's root-user warning (containers run as root by design).
+ENV PIP_ROOT_USER_ACTION=ignore
+
 WORKDIR /code
 
 COPY requirements.txt ./

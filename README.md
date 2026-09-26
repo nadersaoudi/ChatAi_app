@@ -19,6 +19,11 @@ powered by **Groq** (chat), **MongoDB** (users + conversation history) and
 ```text
 .
 ├── README.md            # this file — overview + quickstart
+├── .github/
+│   ├── workflows/ci.yml  # build + tests + sonar + loadtest-10k
+│   └── dependabot.yml    # weekly npm + pip updates (green CI required)
+├── docs/                # Rapport-Codenix.pdf (rapport FR + UML) + source HTML
+│                        # régénérer: cd frontend && npm run report:pdf
 ├── backend/             # FastAPI API (see backend/README.md)
 │   ├── main.py          # thin uvicorn entry: `uvicorn main:app`
 │   └── app/

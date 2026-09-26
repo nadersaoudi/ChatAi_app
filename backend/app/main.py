@@ -25,7 +25,21 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="ChatAI API", version="2.0.0", lifespan=lifespan)
+    app = FastAPI(
+        title="Codenix API",
+        version="1.0.0",
+        description=(
+            "Chat IA (Groq), historique MongoDB et RAG PDF par utilisateur. "
+            "Documentation interactive : essayez les endpoints ci-dessous."
+        ),
+        lifespan=lifespan,
+        openapi_tags=[
+            {"name": "chat", "description": "Complétions + modèles commutables"},
+            {"name": "conversations", "description": "Persistance utilisateurs et historique"},
+            {"name": "rag", "description": "Ingestion PDF et recherche vectorielle"},
+            {"name": "health", "description": "Sondes de vivacité"},
+        ],
+    )
 
     app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(

@@ -9,7 +9,8 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "report:pdf": "node scripts/export-report-pdf.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.24.0",
